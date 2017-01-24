@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-01-24 16:02:01
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-01-24 18:21:18
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-01-24 22:34:25
  */
 (function(factory) {
 
@@ -403,7 +403,7 @@
     parent: null,
 
     // 挂载到父 Application
-    attach: function(app, name) {
+    attach: function(name, app) {
       app.mount(this, name);
       return this;
     },
@@ -440,7 +440,7 @@
     },
 
     // 挂载 App
-    mount: function(app, name) {
+    mount: function(name, app) {
       // 不允许循环挂载
       if (this.parent && this.parent === app) return this;
       app.detach(); // 首先确保自由身
@@ -455,10 +455,10 @@
       var children = this.children;
       var flag = _.isString(name);
       var that = this;
-      _.each(_.pairs(children), function(path, child) {
-        if (flag ? name == path : name === child) {
-          child.parent = null;
-          delete children[name];
+      _.each(_.pairs(children), function(pair) {
+        if (flag ? name == pair[0] : name === pair[1]) {
+          pair[1].parent = null;
+          delete children[pair[0]];
         }
       });
       return this;
@@ -466,6 +466,10 @@
 
     hasParent: function() {
       return !!this.parent;
+    },
+
+    hasChildren: function() {
+      return !_.isEmpty(this.children);
     },
 
     // 如果 options.silent 为真，则只启动自己，不启动子应用
@@ -501,6 +505,10 @@
 
     $app: function(appName, attr) {
       return delegate.call(this, this.child(appName), attr, slice.call(arguments, 2));
+    },
+
+    $parent: function(attr) {
+      return delegate.call(this, this.parent, attr, slice.call(arguments, 1));
     },
 
     $config: function(name, options) {
