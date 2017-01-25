@@ -428,7 +428,10 @@
     // initialization logic.
     initialize: function(){},
 
-    // Return a copy of the model's `attributes` object.
+    // 默认实现的 toJSON 方法是复制一份 attributes
+    // 但你可以覆写该方法，该方法参数 options 或许用得上。
+    // 该 options 与 fetch 方法的 options 参数相同，在未指定 HTTP 请求 data 时，
+    // Backbone.sync 会默认使用 `model.toJSON(options)` 来生成 data。
     toJSON: function(options) {
       return _.clone(this.attributes);
     },
@@ -1402,7 +1405,15 @@
   // instead of `application/json` with the model in a param named `model`.
   // Useful when interfacing with server-side languages like **PHP** that make
   // it difficult to read the body of `PUT` requests.
+  // 
+  // 如果启用 `Backbone.emulatedHTTP` ，那么 Backbone 会将 `PUT` 和 `DELETE` 请求改为 `POST` 请求，
+  // 同时增加一个 `_method` 参数用以记录原本的请求方法。 
   Backbone.sync = function(method, model, options) {
+
+
+    // sync 函数参数 method 取值范围为：create, read, update, delete, patch;
+    // 分别映射到 HTTP 请求方法：POST, GET, PUT, DELETE, PATCH
+    // 这里是将 sync 的 method 转换为 HTTP 请求方法名。
     var type = methodMap[method];
 
     // Default options, unless specified.
@@ -1411,15 +1422,17 @@
       emulateJSON: Backbone.emulateJSON
     });
 
-    // Default JSON-request options.
+    // 默认请求 JSON 数据。
+    // 局部变量 params 表示最后 ajax 请求参数
     var params = {type: type, dataType: 'json'};
 
-    // Ensure that we have a URL.
+    // 检查是否输入 URL 或者 model 是否自带 URL
     if (!options.url) {
       params.url = _.result(model, 'url') || urlError();
     }
 
     // Ensure that we have the appropriate request data.
+    // 
     if (options.data == null && model && (method === 'create' || method === 'update' || method === 'patch')) {
       params.contentType = 'application/json';
       params.data = JSON.stringify(options.attrs || model.toJSON(options));

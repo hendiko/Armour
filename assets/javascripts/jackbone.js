@@ -1,39 +1,12 @@
 /*
  * @Author: laixi
  * @Date:   2017-01-24 16:02:01
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-01-24 22:34:25
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-01-25 17:49:48
  */
-(function(factory) {
-
-  // Establish the root object, `window` (`self`) in the browser, or `global` on the server.
-  // We use `self` instead of `window` for `WebWorker` support.
-  var root = (typeof self == 'object' && self.self == self && self) ||
-    (typeof global == 'object' && global.global == global && global);
-
-  // Set up Backbone appropriately for the environment. Start with AMD.
-  if (typeof define === 'function' && define.amd) {
-    define(['underscore', 'jquery', 'exports'], function(_, $, exports) {
-      // Export global even in AMD case in case this script is loaded with
-      // others that may still expect a global Backbone.
-      root.Backbone = factory(root, exports, _, $);
-    });
-
-    // Next for Node.js or CommonJS. jQuery may not be needed as a module.
-  } else if (typeof exports !== 'undefined') {
-    var _ = require('underscore'),
-      $;
-    try {
-      $ = require('jquery');
-    } catch (e) {}
-    factory(root, exports, _, $);
-
-    // Finally, as a browser global.
-  } else {
-    root.Backbone = factory(root, {}, root._, (root.jQuery || root.Zepto || root.ender || root.$));
-  }
-
-}(function(root, Backbone, _, $) {
+define(function(require, exports, module) {
+  var _ = require('underscore');
+  var Backbone = require('backbone');
 
   // 委托获取属性或执行方法。
   // 如果 attr 是 obj 的属性，则直接返回该属性值。
@@ -50,9 +23,17 @@
     };
   }(_.property('trigger')));
 
+
+  // 检查 App 挂载是否会形成死循环
+  var isClosed = function(parent, child) {
+    if (!parent) return false;
+    if (child === parent) return true;
+    return isClosed(parent.parent, child);
+  };
+
+
   // 切片函数
   var slice = Array.prototype.slice;
-
 
 
   // Attributes Prototype
@@ -83,11 +64,73 @@
       };
     }()),
 
+
+    // 与 Model 同名方法意义相同
+    changedAttributes: function(diff) {
+      if (!diff) return this.hasChanged() ? _.clone(this.changed) : false;
+      var old = this._changing ? this._previousAttributes : this.attributes;
+      var changed = {};
+      for (var attr in diff) {
+        var val = diff[attr];
+        if (_.isEqual(old[attr], val)) continue;
+        changed[attr] = val;
+      }
+      return _.size(changed) ? changed : false;
+    },
+
+    // 清空控制器属性
+    clear: function(options) {
+      var attrs = {};
+      for (var key in this.attributes) attrs[key] = void 0;
+      return this.set(attrs, _.extend({}, options, {
+        unset: true
+      }));
+    },
+
+    // 与 Model 同名方法意义相同
+    clone: function() {
+      return new this.constructor(this.attributes);
+    },
+
+    // 查找 attr 属性作为委托对象，
+    // 如果 name 是委托对象的一个属性，则直接返回属性值。
+    // 如果 name 是委托对象的一个方法，则调用该方法求值。
+    // name 之后的参数都是传递给委托对象的方法参数。
+    delegate: function(attr, name) {
+      var prop = this.get(attr);
+      if (prop) {
+        return delegate.call(this, prop, name, slice.call(arguments, 2));
+      }
+    },
+
+    // 销毁
     destroy: function() {
       this.clear();
       this.stopListening();
       this.off();
       return this;
+    },
+
+    // 获取控制器属性
+    get: function(attr) {
+      return this.attributes[attr];
+    },
+
+    // 与 Model 同名方法意义相同
+    hasChanged: function(attr) {
+      if (attr == null) return !_.isEmpty(this.changed);
+      return _.has(this.changed, attr);
+    },
+
+    // 与 Model 同名方法意义相同
+    previous: function(attr) {
+      if (attr == null || !this._previousAttributes) return null;
+      return this._previousAttributes[attr];
+    },
+
+    // 与 Model 同名方法意义相同
+    previousAttributes: function() {
+      return _.clone(this._previousAttributes);
     },
 
     // 设置控制器属性哈希
@@ -132,6 +175,8 @@
       }
 
       this.id = this.get(_.result(this, 'idAttribute', 'id'));
+      this.collection = this.get('collection');
+      this.controller = this.get('controller');
       this.model = this.get('model');
       this.view = this.get('view');
 
@@ -161,9 +206,9 @@
       return this;
     },
 
-    // 获取控制器属性
-    get: function(attr) {
-      return this.attributes[attr];
+    // 与 Model 同名方法意义相同
+    toJSON: function(options) {
+      return _.clone(this.attributes);
     },
 
     // 移除控制器属性
@@ -171,75 +216,16 @@
       return this.set(attr, void 0, _.extend({}, options, {
         unset: true
       }));
-    },
-
-    // 清空控制器属性
-    clear: function(options) {
-      var attrs = {};
-      for (var key in this.attributes) attrs[key] = void 0;
-      return this.set(attrs, _.extend({}, options, {
-        unset: true
-      }));
-    },
-
-    // 与 Model 同名方法意义相同
-    hasChanged: function(attr) {
-      if (attr == null) return !_.isEmpty(this.changed);
-      return _.has(this.changed, attr);
-    },
-
-    // 与 Model 同名方法意义相同
-    changedAttributes: function(diff) {
-      if (!diff) return this.hasChanged() ? _.clone(this.changed) : false;
-      var old = this._changing ? this._previousAttributes : this.attributes;
-      var changed = {};
-      for (var attr in diff) {
-        var val = diff[attr];
-        if (_.isEqual(old[attr], val)) continue;
-        changed[attr] = val;
-      }
-      return _.size(changed) ? changed : false;
-    },
-
-    // 与 Model 同名方法意义相同
-    previous: function(attr) {
-      if (attr == null || !this._previousAttributes) return null;
-      return this._previousAttributes[attr];
-    },
-
-    // 与 Model 同名方法意义相同
-    previousAttributes: function() {
-      return _.clone(this._previousAttributes);
-    },
-
-    // 与 Model 同名方法意义相同
-    clone: function() {
-      return new this.constructor(this.attributes);
-    },
-
-    // 与 Model 同名方法意义相同
-    toJSON: function(options) {
-      return _.clone(this.attributes);
-    },
-
-    // 查找 attr 属性作为委托对象，
-    // 如果 name 是委托对象的一个属性，则直接返回属性值。
-    // 如果 name 是委托对象的一个方法，则调用该方法求值。
-    // name 之后的参数都是传递给委托对象的方法参数。
-    delegate: function(attr, name) {
-      var prop = this.get(attr);
-      if (prop) {
-        return delegate.call(this, prop, name, slice.call(arguments, 2));
-      }
     }
   }, Backbone.Events);
-
 
 
   // Backbone.Controller
   // ----------------------
 
   // MVC 之 Controller
+  // attributes 可以是任何属性哈希，如果 attributes 中含有 model 或 view，
+  // 它们同时会被直接绑定到 controller。
   var Controller = Backbone.Controller = function(attributes, options) {
     var attrs = attributes || {};
     options || (options = {});
@@ -251,13 +237,20 @@
     this.initialize.apply(this, arguments);
   };
 
-  _.extend(Controller.prototype, attributesPrototype, {
+  Controller.extend = Backbone.Model.extend;
 
-    idAttribute: 'id',
+  _.extend(Controller.prototype, attributesPrototype, {
 
     cidPrefix: 'ctl',
 
+    idAttribute: 'id',
+
     initialize: function() {},
+
+    // 委托 this.collection 处理事务的快捷方式
+    $collection: function(prop) {
+      return delegate.call(this, this.collection, prop, slice.call(arguments, 1));
+    },
 
     // 委托 this.model 处理事务的快捷方式
     $model: function(name) {
@@ -272,40 +265,40 @@
     // 直接委托 this.model 处理事务的快捷方式
     // -----------------------------------------
 
-    $set: function() {
-      return delegate.call(this, this.model, 'set', arguments);
-    },
-
-    $get: function() {
-      return delegate.call(this, this.model, 'get', arguments);
-    },
-
-    $escape: function() {
-      return delegate.call(this, this.model, 'escape', arguments);
-    },
-
-    $has: function() {
-      return delegate.call(this, this.model, 'has', arguments);
-    },
-
-    $matches: function() {
-      return delegate.call(this, this.model, 'matches', arguments);
-    },
-
-    $unset: function() {
-      return delegate.call(this, this.model, 'unset', arguments);
+    $changedAttributes: function() {
+      return delegate.call(this, this.model, 'changedAttributes', arguments);
     },
 
     $clear: function() {
       return delegate.call(this, this.model, 'clear', arguments);
     },
 
+    $destroy: function() {
+      return delegate.call(this, this.model, 'destroy', arguments);
+    },
+
+    $escape: function() {
+      return delegate.call(this, this.model, 'escape', arguments);
+    },
+
+    $fetch: function() {
+      return delegate.call(this, this.model, 'fetch', arguments);
+    },
+
+    $get: function() {
+      return delegate.call(this, this.model, 'get', arguments);
+    },
+
+    $has: function() {
+      return delegate.call(this, this.model, 'has', arguments);
+    },
+
     $hasChanged: function() {
       return delegate.call(this, this.model, 'hasChanged', arguments);
     },
 
-    $changedAttributes: function() {
-      return delegate.call(this, this.model, 'changedAttributes', arguments);
+    $matches: function() {
+      return delegate.call(this, this.model, 'matches', arguments);
     },
 
     $previous: function() {
@@ -316,24 +309,24 @@
       return delegate.call(this, this.model, 'previousAttributes', arguments);
     },
 
-    $fetch: function() {
-      return delegate.call(this, this.model, 'fetch', arguments);
+    $set: function() {
+      return delegate.call(this, this.model, 'set', arguments);
     },
 
     $save: function() {
       return delegate.call(this, this.model, 'save', arguments);
     },
 
-    $destroy: function() {
-      return delegate.call(this, this.model, 'destroy', arguments);
+    $toJSON: function() {
+      return _.result(this.model, 'toJSON');
+    },
+
+    $unset: function() {
+      return delegate.call(this, this.model, 'unset', arguments);
     },
 
     $url: function() {
       return delegate.call(this, this.model, 'url', arguments);
-    },
-
-    $toJSON: function() {
-      return _.result(this.model, 'toJSON');
     },
 
     // 直接委托 this.view 处理事务的快捷方式
@@ -342,6 +335,36 @@
     // 返回视图根节点
     $el: function() {
       return this.view ? this.view.$el : null;
+    },
+
+    $append: function() {
+      return delegate.call(this, this.$el(), 'append', arguments);
+    },
+
+    $appendTo: function() {
+      return delegate.call(this, this.$el(), 'appendTo', arguments);
+    },
+
+    $detach: function() {
+      return delegate.call(this, this.$el(), 'detach', argumnets);
+    },
+
+    // 查找视图内元素，委托 view.$ 
+    $findElement: function() {
+      return delegate.call(this, this.view, '$', arguments);
+    },
+
+    // 直接获取或设置视图 HTML
+    $html: function() {
+      return delegate.call(this, this.$el(), 'html', arguments);
+    },
+
+    $prepend: function() {
+      return delegate.call(this, this.$el(), 'prepend', arguments);
+    },
+
+    $prependTo: function() {
+      return delegate.call(this, this.$el(), 'prependTo', arguments);
     },
 
     // 销毁视图
@@ -357,20 +380,8 @@
     // 设置视图根节点
     $setElement: function() {
       return delegate.call(this, this.view, 'setElement', arguments);
-    },
-
-    // 查找视图内元素，委托 view.$ 
-    $findElement: function() {
-      return delegate.call(this, this.view, '$', arguments);
-    },
-
-    // 直接获取或设置视图 HTML
-    $html: function() {
-      return delegate.call(this, this.$el(), 'html', arguments);
     }
   });
-
-  Controller.extend = Backbone.Model.extend;
 
 
   // Backbone.Application
@@ -378,8 +389,8 @@
 
   var Application = Backbone.Application = function(options) {
     options || (options = {});
-    this.deps = _.extend({}, options.deps);
-    this.config = _.extend({}, options.config);
+    this.deps = _.extend({}, options.deps, _.result(this, 'deps'));
+    this.config = _.extend({}, options.config, _.result(this, 'config'));
     this.children = _.extend({}, options.children);
     this.cid = _.uniqueId(this.cidPrefix);
 
@@ -389,18 +400,19 @@
     this.initialize.apply(this, arguments);
   };
 
+  Application.extend = Backbone.Model.extend;
+
   _.extend(Application.prototype, attributesPrototype, {
 
     __started: false,
 
-    idAttribute: 'id',
-
     cidPrefix: 'app',
 
-    initialize: function() {},
+    idAttribute: 'id',
 
-    // 父 App
-    parent: null,
+    parent: null, // 父 App
+
+    initialize: function() {},
 
     // 挂载到父 Application
     attach: function(name, app) {
@@ -408,6 +420,53 @@
       return this;
     },
 
+    // 广播
+    broadcast: function(event, args, options) {
+      if (!_.isString(event) || !event) return this;
+      options || (options = {});
+      var up = !!options.up;
+      var recursive = !!options.recursive;
+
+      var apps = up ? (this.parent ? [this.parent] : null) : _.values(this.children);
+      _.each(apps, function(app) {
+        app.trigger.call(app, event, args);
+        if (recursive) {
+          app.broadcast.call(app, event, args, options);
+        }
+      });
+      return this;
+    },
+
+    // 查找子应用
+    child: function(path) {
+      return _.property(path)(this.children);
+    },
+
+    // 设置配置
+    conf: function(key, val) {
+      var attrs;
+      if (typeof key === 'object') {
+        attrs = key;
+      } else {
+        (attrs = {})[key] = val;
+      }
+      _.extend(this.config, attrs);
+      return this;
+    },
+
+    // 设置依赖
+    dep: function(key, val) {
+      var attrs;
+      if (typeof key === 'object') {
+        attrs = key;
+      } else {
+        (attrs = {})[key] = val;
+      }
+      _.extend(this.deps, attrs);
+      return this;
+    },
+
+    // 销毁
     destroy: function() {
       this.clear();
       this.stopListening();
@@ -429,34 +488,64 @@
       return this;
     },
 
-    broadcast: function() {
-      var args = _.toArray(arguments);
-      args.unshift('broadcast');
-      var apps = _.values(this.children);
-      this.parent && apps.unshift(this.parent);
-      _.each(apps, function(app) {
-        app.trigger.apply(app, args);
-      });
+    // 是否挂载了子 app。
+    hasChildren: function() {
+      return !_.isEmpty(this.children);
+    },
+
+    // 是否被挂载到其他 app。
+    hasParent: function() {
+      return !!this.parent;
+    },
+
+    // 是否启动过
+    hasStarted: function() {
+      return !!this.__started;
+    },
+
+    // 启动
+    // 如果 options.silent 为真，则只启动自己，不启动子应用
+    kickoff: function(args, options) {
+      if (this.hasStarted()) return this;
+      this.__started = true;
+      options || (options = {});
+      this.trigger('before:start', args, options);
+      if (!options.silent) {
+        _.each(this.children, function(child) {
+          child.kickoff(args, options);
+        });
+      }
+      this.start(args, options);
+      this.trigger('after:start', args, options);
+      return this;
     },
 
     // 挂载 App
-    mount: function(name, app) {
+    // path 表示挂载路径，一个 app 只能同时挂载到一个挂载点。
+    mount: function(path, app) {
+      if (!_.isString(path) || !path || !app) return this;
       // 不允许循环挂载
-      if (this.parent && this.parent === app) return this;
+      if (isClosed(this, app)) throw Error('it is a closed cycle, detach first.');
       app.detach(); // 首先确保自由身
-      this.unmount(name); // 确保挂载点空闲
-      this.children[name] = app;
+      this.unmount(path); // 确保挂载点空闲
+      this.children[path] = app;
       app.parent = this;
       return this;
     },
 
+
+
+    // 开始
+    start: function(args, options) {},
+
     // 卸载 App
-    unmount: function(name) {
+    // child 可以是挂载路径 path，或挂载的 app。
+    unmount: function(child) {
       var children = this.children;
-      var flag = _.isString(name);
+      var flag = _.isString(child);
       var that = this;
       _.each(_.pairs(children), function(pair) {
-        if (flag ? name == pair[0] : name === pair[1]) {
+        if (flag ? child == pair[0] : child === pair[1]) {
           pair[1].parent = null;
           delete children[pair[0]];
         }
@@ -464,71 +553,49 @@
       return this;
     },
 
-    hasParent: function() {
-      return !!this.parent;
+    // 委托子应用处理事务
+    $child: function(path, attr) {
+      return delegate.call(this, this.child(path), attr, slice.call(arguments, 2));
     },
 
-    hasChildren: function() {
-      return !_.isEmpty(this.children);
-    },
-
-    // 如果 options.silent 为真，则只启动自己，不启动子应用
-    kickoff: function(options) {
-      if (this.__started) return this;
-      this.__started = true;
-      var args = slice.call(arguments, 0);
-      var eventArgs = slice.call(arguments, 0);
-
-      eventArgs[0] = 'before:start';
-      this.trigger.apply(this, eventArgs);
-
-      options || (options = {});
-
-      if (!options.silent) {
-        _.each(this.children, function(child) {
-          child.kickoff.apply(child, args);
-        });
+    // 获取配置，如果本地配置不存在，则递归从父应用获取。
+    $config: function(key) {
+      var config = this.config;
+      if (_.has(config, key)) return config[key];
+      var parent = this.parent;
+      if (parent) {
+        return parent.$config(key);
       }
-
-      this.start.apply(this, slice.call(eventArgs, 1));
-
-      eventArgs[0] = 'after:start';
-      this.trigger.apply(this, eventArgs);
-      return this;
     },
 
-    start: function() {},
-
-    child: function(name) {
-      return _.property(name)(this.children);
+    // 获取依赖，如果本地依赖不存在，则递归从父应用获取。
+    $deps: function(key) {
+      var deps = this.deps;
+      if (_.has(deps, key)) return deps[key];
+      var parent = this.parent;
+      if (parent) {
+        return parent.$deps(key);
+      }
     },
 
-    $app: function(appName, attr) {
-      return delegate.call(this, this.child(appName), attr, slice.call(arguments, 2));
-    },
-
+    // 委托父应用处理事务
     $parent: function(attr) {
       return delegate.call(this, this.parent, attr, slice.call(arguments, 1));
-    },
-
-    $config: function(name, options) {
-      var config = this.config;
-      if (_.has(config, name)) return config[name];
-      var parent = this.parent;
-      if (parent) {
-        return parent.$config(name);
-      }
-    },
-
-    $deps: function(name, options) {
-      var deps = this.deps;
-      if (_.has(deps, name)) return deps[name];
-      var parent = this.parent;
-      if (parent) {
-        return parent.$deps(name);
-      }
     }
   });
 
-  Application.extend = Backbone.Model.extend;
-}));
+
+  // Backbone.View
+  // ----------------
+
+  var viewPrototype = Backbone.View.prototype;
+  var View = Backbone.View = Backbone.View.extend({
+    constructor: function(options) {
+      _.extend(this, _.pick(options, ['controller']));
+      viewPrototype.constructor.apply(this, arguments);
+    }
+  });
+
+  module.exports = Backbone;
+
+});
