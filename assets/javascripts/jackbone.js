@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-01-24 16:02:01
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-01-25 17:49:48
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-01-26 08:54:03
  */
 define(function(require, exports, module) {
   var _ = require('underscore');
@@ -532,8 +532,6 @@ define(function(require, exports, module) {
       app.parent = this;
       return this;
     },
-
-
 
     // 开始
     start: function(args, options) {},

@@ -389,7 +389,6 @@
   // frequently representing a row in a table in a database on your server.
   // A discrete chunk of data and a bunch of useful, related methods for
   // performing computations and transformations on that data.
-
   // Create a new model with the specified attributes. A client id (`cid`)
   // is automatically generated and assigned for you.
   // 
@@ -397,16 +396,22 @@
   // 1. 为实例设置 cid 属性；
   // 2. 为实例设置 attributes；
   // 3. 调用实例的 initialize 方法完成初始化。
+  // 
+  // 注意：
+  // 如果给定 attributes，它是通过 set 方法添加到 model 的 attributes。
+  // 并且是早于 initialize 方法调用。
   var Model = Backbone.Model = function(attributes, options) {
     var attrs = attributes || {};
     options || (options = {});
-    // 生成唯一 cid，每个 Model 都拥有一个独一无二的 cid。
+    // 生成唯一 cid，cid 表示 client id，是指在本地模型变量的标识，而不是模型所代表数据的唯一标识。
     this.cid = _.uniqueId(this.cidPrefix);
     this.attributes = {};
-    // 如果指定了 collection，直接绑定到 model。
+    // 如果指定了 collection，则直接绑定到模型上。
     if (options.collection) this.collection = options.collection;
+    // 默认初始化设置 attributes 是不经过 parse 方法的（parse 方法只有在 fetch/save 等同步数据时才调用）
     // 如果指定 options.parse 为真，则初始化时调用 parse 方法解析 attrs。
     if (options.parse) attrs = this.parse(attrs, options) || {};
+    // 初始化 attributes 
     attrs = _.defaults({}, attrs, _.result(this, 'defaults'));
     // 调用 set 方法设置初始属性。
     // 不用担心 set 会触发 change 事件，因为此时还没有调用 initialize 方法
@@ -417,6 +422,7 @@
     // 所以需要重新将 this.changed 修改为空对象。
     // 注意：当设置初始 attributes 时，甚至都还没有调用 initialize。
     this.changed = {};
+    // 调用初始化方法 initialize。
     this.initialize.apply(this, arguments);
   };
 
@@ -459,7 +465,7 @@
       return Backbone.sync.apply(this, arguments);
     },
 
-    // 获取模型的 attribute 值
+    // 获取属性值
     get: function(attr) {
       return this.attributes[attr];
     },
@@ -490,6 +496,8 @@
 
     // 设置模型属性哈希，触发 `change` 事件。
     // 本方法是模型对象的核心操作，更新模型数据并将属性状态变化通知给外部。
+    // Backbone.Model 所有更新 attributes 的操作都是通过 set 方法完成，
+    // 例如初始化 initialize(attributes), fetch, save 等。
     // 操作成功返回模型对象自身，操作失败返回 false。
     // 注意：
     // options.slient 为 true，只是表示本次 set 操作不触发 `change` 事件。
@@ -659,20 +667,31 @@
 
     // Fetch the model from the server, merging the response with the model's
     // local attributes. Any changed attributes will trigger a "change" event.
-    // fetch 方法主要用于从服务端同步数据。
+    // fetch 方法主要用于从远端读取数据同步到本地 attributes，如果属性值发生变化，触发 `change` 事件。
     // Backbone 本意是为 REST API 而设计，但也可以兼容非 REST API。
     // 使用非 REST API 时，应该改写 parse 方法，再调用 fetch 方法。
     fetch: function(options) {
+      // 远端的响应结果默认需要通过 parse 方法解析才能 set，
+      // 可以在 options 中指定 parse 为 false 来解除这一逻辑。
       options = _.extend({parse: true}, options);
       var model = this;
+
+      // 封装 success 操作
+      // 无论 options 中是否指定 success 回调，xhr 请求成功后都会有一次 success 回调。
+      // 如果有 options.success 回调函数，回调函数会在封装的 success 回调用执行。
       var success = options.success;
       options.success = function(resp) {
+        // 如果要求 parse 为真，则远程返回值必须经过 parse 方法解析，否则远程返回值就是响应数据。
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
         if (!model.set(serverAttrs, options)) return false;
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
       };
       wrapError(this, options);
+      // read 远程数据，默认使用 this.sync 方法实现，
+      // this.sync 默认使用 Backbone.sync 方法实现，
+      // Backbone.sync 默认使用 Backbone.$ 方法实现，
+      // Backbone.$ 默认使用 jQuery.ajax 方法实现。
       return this.sync('read', this, options);
     },
 
@@ -774,8 +793,11 @@
       return base.replace(/[^\/]$/, '$&/') + encodeURIComponent(id);
     },
 
-    // **parse** converts a response into the hash of attributes to be `set` on
-    // the model. The default implementation is just to pass the response along.
+    // parse 方法存在的意义在于解析远程同步数据时，远端返回的响应对象，
+    // 该对象默认是 REST API 返回的数据对象，因此可以直接被 set 方法使用。
+    // 但对于非 REST API 接口响应对象，则需要调用 parse 将其响应结果解析后再返回给 set 使用。
+    // 所以说，如果直接使用 set 方法设置属性，是无需经过 parse 方法的，只有自动同步远程数据时才需要覆写该方法。 
+    // 
     parse: function(resp, options) {
       return resp;
     },
@@ -1458,13 +1480,17 @@
     }
 
     // Ensure that we have the appropriate request data.
-    // 
+    // 如果 options 未给定 data 字段（即 model.fetch(options) 中的 options）
+    // 并且同步的方法是写操作，那么默认的 xhr 请求中 contentType 应为 json。
+    // 提交的 data 优先从 options.attrs 读取，其次读取 model.toJSON()。
     if (options.data == null && model && (method === 'create' || method === 'update' || method === 'patch')) {
       params.contentType = 'application/json';
       params.data = JSON.stringify(options.attrs || model.toJSON(options));
     }
 
-    // For older servers, emulate JSON by encoding the request into an HTML-form.
+    // 如果设置了 Backbone.emulateJSON 为真，则使用 application/x-www-form-urlencoded 格式提交数据。
+    // 注意：
+    //  这里并不是将 data 直接编码成 HTML-form 格式，而是将整个 data 封装在 model 字段中提交。
     if (options.emulateJSON) {
       params.contentType = 'application/x-www-form-urlencoded';
       params.data = params.data ? {model: params.data} : {};
@@ -1472,6 +1498,9 @@
 
     // For older servers, emulate HTTP by mimicking the HTTP method with `_method`
     // And an `X-HTTP-Method-Override` header.
+    // 如果设置 Backbone.emulateHTTP 为真，且 sync 为写操作，
+    // 则统一使用 POST 方法请求，并且将原始请求方法保存在 data._method 字段中。
+    // 同时增加 xhr 请求头 X-HTTP-Method-Override。
     if (options.emulateHTTP && (type === 'PUT' || type === 'DELETE' || type === 'PATCH')) {
       params.type = 'POST';
       if (options.emulateJSON) params.data._method = type;
@@ -1483,11 +1512,14 @@
     }
 
     // Don't process data on a non-GET request.
+    // jQeury 的 ajax 方法，如果提交的 data 为非字符串对象，会被默认转换为 query string。
+    // 以匹配默认的 application/x-www-form-urlencode 类型文档。
+    // 因此对于非 GET 且未要求 emulateJSON 的请求，设置 processData 为否以阻止 jQuery 这一默认行为。
     if (params.type !== 'GET' && !options.emulateJSON) {
       params.processData = false;
     }
 
-    // Pass along `textStatus` and `errorThrown` from jQuery.
+    // 重新封装 options 中的 error，将 textStatus 和 errorThrown 记录到 options 中。
     var error = options.error;
     options.error = function(xhr, textStatus, errorThrown) {
       options.textStatus = textStatus;
@@ -1495,13 +1527,17 @@
       if (error) error.call(options.context, xhr, textStatus, errorThrown);
     };
 
-    // Make the request, allowing the user to override any Ajax options.
+    // 使用 Backbone.ajax 发起 xhr 请求，并且将 xhr 保存在 options 中。
     var xhr = options.xhr = Backbone.ajax(_.extend(params, options));
+    // 发起请求后立即出发 request 事件，告知第三方已发起了一次 xhr 请求。
     model.trigger('request', model, xhr, options);
     return xhr;
   };
 
-  // Map from CRUD to HTTP for our default `Backbone.sync` implementation.
+  // 默认的 Backbone.sync 中 method 与 http 请求的映射关系。
+  // 为什么要自定义一套 Backbone.sync 的方法名而不直接使用 HTTP 请求方法名？
+  // 因为这样可以将 Backbone 的同步操作与 HTTP 请求分离开，
+  // 因为你也可以通过其他渠道来实现数据同步，例如通过改写 sync 方法来与 local storage 同步数据。
   var methodMap = {
     'create': 'POST',
     'update': 'PUT',
@@ -1512,8 +1548,7 @@
 
   // Set the default implementation of `Backbone.ajax` to proxy through to `$`.
   // Override this if you'd like to use a different library.
-  // 
-  // 默认自带的 ajax 方法委托给 jQuery 的 ajax 方法实现。
+  // 默认使用 jQuery.ajax 方法实现数据同步，如果使用其他库，可以改写此同步方法。
   Backbone.ajax = function() {
     return Backbone.$.ajax.apply(Backbone.$, arguments);
   };
