@@ -392,15 +392,30 @@
 
   // Create a new model with the specified attributes. A client id (`cid`)
   // is automatically generated and assigned for you.
+  // 
+  // 默认的 Model 构造函数主要做三件事：
+  // 1. 为实例设置 cid 属性；
+  // 2. 为实例设置 attributes；
+  // 3. 调用实例的 initialize 方法完成初始化。
   var Model = Backbone.Model = function(attributes, options) {
     var attrs = attributes || {};
     options || (options = {});
+    // 生成唯一 cid，每个 Model 都拥有一个独一无二的 cid。
     this.cid = _.uniqueId(this.cidPrefix);
     this.attributes = {};
+    // 如果指定了 collection，直接绑定到 model。
     if (options.collection) this.collection = options.collection;
+    // 如果指定 options.parse 为真，则初始化时调用 parse 方法解析 attrs。
     if (options.parse) attrs = this.parse(attrs, options) || {};
     attrs = _.defaults({}, attrs, _.result(this, 'defaults'));
+    // 调用 set 方法设置初始属性。
+    // 不用担心 set 会触发 change 事件，因为此时还没有调用 initialize 方法
+    // 所以通常说来，此时你还来不及绑定任何事件。
     this.set(attrs, options);
+    // 调用 set 方法会导致 this.changed 发生变化，
+    // Jeremy Ashkenas 的意图是初始化的 Model 不应该含有变化的属性（因为一切都是初始的）
+    // 所以需要重新将 this.changed 修改为空对象。
+    // 注意：当设置初始 attributes 时，甚至都还没有调用 initialize。
     this.changed = {};
     this.initialize.apply(this, arguments);
   };
@@ -439,12 +454,12 @@
     // Proxy `Backbone.sync` by default -- but override this if you need
     // custom syncing semantics for *this* particular model.
     // 
-    // 默认委托 Backbone.sync 方法实现本方法。
+    // 模型同步数据，默认委托 Backbone.sync 方法实现本方法。
     sync: function() {
       return Backbone.sync.apply(this, arguments);
     },
 
-    // Get the value of an attribute.
+    // 获取模型的 attribute 值
     get: function(attr) {
       return this.attributes[attr];
     },
@@ -454,13 +469,21 @@
       return _.escape(this.get(attr));
     },
 
-    // Returns `true` if the attribute contains a value that is not null
-    // or undefined.
+    // 返回 true，如果模型指定 attribute 不为 null 或 undefined。
     has: function(attr) {
       return this.get(attr) != null;
     },
 
-    // 判断
+    // 委托 _.iteratee 来判断给定的 attrs 是否是模型 attributes 子集
+    // 根据传入 iteratee 参数不同，iteratee 具体实现也不同。
+    // 1. attrs 为 void 0。
+    //  相当于 _.identity(this.attributes)，返回结果为 true。
+    // 2. attrs 为函数。
+    //  相当于 attrs(this.attributes);
+    // 3. attrs 为对象。
+    //  相当于 _.matcher(attrs)(this.attributes)，判断 attrs 是否是 attributes 子集。
+    // 4. 其他（主要是指 string）
+    //  相当于 _.property(attrs)(this.attributes);
     matches: function(attrs) {
       return !!_.iteratee(attrs, this)(this.attributes);
     },
@@ -636,6 +659,9 @@
 
     // Fetch the model from the server, merging the response with the model's
     // local attributes. Any changed attributes will trigger a "change" event.
+    // fetch 方法主要用于从服务端同步数据。
+    // Backbone 本意是为 REST API 而设计，但也可以兼容非 REST API。
+    // 使用非 REST API 时，应该改写 parse 方法，再调用 fetch 方法。
     fetch: function(options) {
       options = _.extend({parse: true}, options);
       var model = this;
@@ -1486,6 +1512,8 @@
 
   // Set the default implementation of `Backbone.ajax` to proxy through to `$`.
   // Override this if you'd like to use a different library.
+  // 
+  // 默认自带的 ajax 方法委托给 jQuery 的 ajax 方法实现。
   Backbone.ajax = function() {
     return Backbone.$.ajax.apply(Backbone.$, arguments);
   };
