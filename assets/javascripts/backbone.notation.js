@@ -96,6 +96,7 @@
       };
     }
   };
+  // 添加 underscore 方法
   var addUnderscoreMethods = function(Class, methods, attribute) {
     _.each(methods, function(length, method) {
       if (_[method]) Class.prototype[method] = addMethod(length, method, attribute);
@@ -525,6 +526,10 @@
 
       // 正式设置属性哈希前，先验证输入参数。
       // 如果要求验证数据，但验证数据失败，则中止 set 操作。
+      // this._validate 方法是通过 this.validate 方法来实现的，
+      // 只有定义了 this.validate 方法，才会进行验证，否则默认验证成功。
+      // 如果 this.validate 返回值为真，则表示验证失败（返回值就是验证失败原因 this.validationError），
+      // 否则验证成功，this.validationError 值设置为 null。
       if (!this._validate(attrs, options)) return false;
 
       // Extract attributes and options.
@@ -683,10 +688,19 @@
       options.success = function(resp) {
         // 如果要求 parse 为真，则远程返回值必须经过 parse 方法解析，否则远程返回值就是响应数据。
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+        // model.set 方法只有在 validate 失败时才会返回 false。
+        // 如果验证失败，则不会进行具有实际意义的 set 操作。
+        // 并且触发 invalid 事件。
         if (!model.set(serverAttrs, options)) return false;
+        // 如果 set 操作成功，则继续调用原本计划的 success 回调函数。
+        // 注意：
+        //    此处的 success 回调与原生 jQuery ajax success 回调稍微不同的是，
+        //    它的上下文由 options.context 指定。
         if (success) success.call(options.context, model, resp, options);
+        // 执行完 success 回调后触发 sync 事件。
         model.trigger('sync', model, resp, options);
       };
+      // 封装 options.error 回调，确保 xhr 失败时，触发 model 的 error 事件。
       wrapError(this, options);
       // read 远程数据，默认使用 this.sync 方法实现，
       // this.sync 默认使用 Backbone.sync 方法实现，
@@ -698,8 +712,13 @@
     // Set a hash of model attributes, and sync the model to the server.
     // If the server returns an attributes hash that differs, the model's
     // state will be `set` again.
+    // 
+    // 设置 model 的 attributes，并且将 attributes 同步到远端。
+    // 如果远端返回的响应值（通过 parse 方法解析后）不同于 attributes，
+    // 则再次执行 set 操作。
     save: function(key, val, options) {
       // Handle both `"key", value` and `{key: value}` -style arguments.
+      // 处理不同传参方式。
       var attrs;
       if (key == null || typeof key === 'object') {
         attrs = key;
@@ -708,42 +727,72 @@
         (attrs = {})[key] = val;
       }
 
+      // 默认要求进行 validate 和 parse 操作。
       options = _.extend({validate: true, parse: true}, options);
+      // 是否等待服务器响应再进行 set 操作的标识。（默认不等待）
+      // 等待服务器响应与否的区别是：
+      //  一个先 set，后同步数据。
+      //  一个是先同步数据，然后 set。
       var wait = options.wait;
 
       // If we're not waiting and attributes exist, save acts as
       // `set(attr).save(null, opts)` with validation. Otherwise, check if
       // the model will be valid when the attributes, if any, are set.
+      // 如果 attrs 为真，且无需等待服务器响应，则立即使用 attrs 进行 set 操作。
+      // 注意：
+      //    如果不等待服务器响应，set 操作一旦成功会立即触发 `change` 事件，
+      //    但随后的服务器响应值会被重新 set 一次，有可能会 set 失败。
       if (attrs && !wait) {
+        // 如果 set 操作失败（即 validate 失败），立即返回 false（结束 save 操作）。
+        // 注意：什么要求 attrs 也为真才进行 set 操作？
+        // 如果不限制 attrs 为真，那么 set 操作会默认成功，则将导致 save 操作不会终止。
+        // 那么 save 会将未做任何修改的 attributes 再次同步到远端，这样不符合 save 操作的意图。 
         if (!this.set(attrs, options)) return false;
       } else {
+        // 验证 attrs，验证失败则立即终止 save 操作。
         if (!this._validate(attrs, options)) return false;
       }
 
       // After a successful server-side save, the client is (optionally)
       // updated with the server-side state.
+      // 
+      // 以下逻辑与 fetch 逻辑相似，开始进行数据同步相关操作。
       var model = this;
       var success = options.success;
       var attributes = this.attributes;
+      // 封装 success 回调
       options.success = function(resp) {
         // Ensure attributes are restored during synchronous saves.
         model.attributes = attributes;
+        // 解析远端响应值
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+        // 如果当前 save 操作是需要等待服务器响应的，则合并 attrs 和 serverAttrs 属性，
+        // 然后再进行 set 操作。
         if (wait) serverAttrs = _.extend({}, attrs, serverAttrs);
+        // 无论是否要求 save 操作等待服务器响应，如果响应值存在（经过可能的 parse 操作后，解析结果不为 null 或 undefined），
+        // 则进行 set 操作，set 操作失败（验证失败）会立即终止 save 操作。
         if (serverAttrs && !model.set(serverAttrs, options)) return false;
+        // set 成功后，执行可能计划的 success，然后触发 sync 事件。
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
       };
+      // 封装 error 回调
       wrapError(this, options);
 
       // Set temporary attributes if `{wait: true}` to properly find new ids.
+      // 设置临时的 attributes，因为在 Backbone.sync 操作中可能需要将 attributes 同步到远端。
+      // 注意：此处是直接修改 attributes，而不是通过 set 操作进行修改，因此不会触发任何事件。
       if (attrs && wait) this.attributes = _.extend({}, attributes, attrs);
 
+      // 根据模型状态选择 REST API 的提交方式
       var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
+      // 如果是 patch 操作，则将 attrs 保存在 options.attrs 中
+      // （此处保存 attrs 的意图不是很明确，难道只是为了记录下 patch 的数据，以便满足开发者的个性化操作？）
       if (method === 'patch' && !options.attrs) options.attrs = attrs;
       var xhr = this.sync(method, this, options);
 
       // Restore attributes.
+      // 立刻恢复模型应该拥有的 attributes。
       this.attributes = attributes;
 
       return xhr;
@@ -797,7 +846,8 @@
     // 该对象默认是 REST API 返回的数据对象，因此可以直接被 set 方法使用。
     // 但对于非 REST API 接口响应对象，则需要调用 parse 将其响应结果解析后再返回给 set 使用。
     // 所以说，如果直接使用 set 方法设置属性，是无需经过 parse 方法的，只有自动同步远程数据时才需要覆写该方法。 
-    // 
+    // 例如 fetch 方法中调用了 parse 方法解析远端的响应值，fetch 方法中使用 parse 解析结果去做 set 操作，
+    // 因此 parse 返回 null 或 undefined 时，set 操作会立即终止。
     parse: function(resp, options) {
       return resp;
     },
@@ -808,17 +858,26 @@
     },
 
     // A model is new if it has never been saved to the server, and lacks an id.
+    // 判断一个 model 是否从未保存到远端。
+    // 判断依据是查看该 model 的 attributes 是否拥有 this.idAttribute 映射字段。
+    // Backbone.Model 的设计意图是 Model 是远端一条数据的抽象对象（例如数据库中某张表里某一行数据），
+    // 每个 model 都应该拥有一个主键（对应数据库里数据行的主键值），拥有主键则表示远端已存在该条数据，
+    // 否则视该 model 为未保存的数据模型。
     isNew: function() {
       return !this.has(this.idAttribute);
     },
 
     // Check if the model is currently in a valid state.
+    // 检查 model 当前的 attributes 是否处于合法状态（能够通过验证）
     isValid: function(options) {
       return this._validate({}, _.defaults({validate: true}, options));
     },
 
     // Run validation against the next complete set of model attributes,
     // returning `true` if all is well. Otherwise, fire an `"invalid"` event.
+    // 注意：
+    // validate 是对模拟 set 成功后的 attributes 进行验证，而不仅仅是对 attrs 进行验证。
+    // 也就是说 this.validate(attrs, options) 中的 attrs 是指模拟 set 成功后的 attributes。
     _validate: function(attrs, options) {
       if (!options.validate || !this.validate) return true;
       attrs = _.extend({}, this.attributes, attrs);
@@ -851,42 +910,64 @@
   // Create a new **Collection**, perhaps to contain a specific type of `model`.
   // If a `comparator` is specified, the Collection will maintain
   // its models in sort order, as they're added and removed.
+  // 
+  // Collection 构造函数，可以指定 collection 的 model 类型。
+  // 如果给定 `comparator`，当天新增或移除 model 时，collection 会自动维护 models 的排序。
   var Collection = Backbone.Collection = function(models, options) {
     options || (options = {});
+    // 如果 options 中包含 model 字段，则直接绑定到 collection。
     if (options.model) this.model = options.model;
+    // 如果 options 中包含 comparator 且不为 undefined，则直接绑定到 collection。
     if (options.comparator !== void 0) this.comparator = options.comparator;
+    // 重置 collection 的 length, models, _byId 三个属性。
     this._reset();
+    // 初始化 collection
     this.initialize.apply(this, arguments);
+    // 如果指定了 models, 则静默设置初始 models
+    // todo: 
+    //   与 model 初始化不同，collection 使用 reset 而不是 set 作为构造初始数据的手段，
+    //   且 reset 操作晚于 initialize 操作。作者意图不是很明确。
+    //   如此操作的话，则意味着你不应该在 initialize 中对 collection 进行成员增减操作，
+    //   否则可能会在构造实例时，被构造参数中的 models 覆写了 collection 成员。
     if (models) this.reset(models, _.extend({silent: true}, options));
   };
 
-  // Default options for `Collection#set`.
+  // collection#set 操作的默认选项。
   var setOptions = {add: true, remove: true, merge: true};
   var addOptions = {add: true, remove: false};
 
-  // Splices `insert` into `array` at index `at`.
+  // 将数组 insert 成员，依次插入到数组 array 的 at 位置。
+  // 例如：
+  // var a = [1,2,3], b = [4,5,6];
+  // splice(a, b, 1);
+  // 数组 a 变成 [1, 4, 5, 6, 2, 3]
   var splice = function(array, insert, at) {
+    // 确保 at 是符合 array 长度的合法位置（不小于 0，不大于 array 长度）。
     at = Math.min(Math.max(at, 0), array.length);
+    // 生成切片后半部分等长 Array。
     var tail = Array(array.length - at);
+    // 计算待插入 Array 长度
     var length = insert.length;
+    // 将 array 后半部分成员复制到容器 tail。
     for (var i = 0; i < tail.length; i++) tail[i] = array[i + at];
+    // 将 insert 成员依次插入到 array 的后半部分。  
     for (i = 0; i < length; i++) array[i + at] = insert[i];
+    // 将 tail 中成员依次继续插入到 array 尾部。
     for (i = 0; i < tail.length; i++) array[i + length + at] = tail[i];
   };
 
   // Define the Collection's inheritable methods.
   _.extend(Collection.prototype, Events, {
 
-    // The default model for a collection is just a **Backbone.Model**.
-    // This should be overridden in most cases.
+    // 默认 model 为 Backbone.Model。
+    // 大部分情景中你需要重写该属性。
     model: Model,
 
     // Initialize is an empty function by default. Override it with your own
     // initialization logic.
     initialize: function(){},
 
-    // The JSON representation of a Collection is an array of the
-    // models' attributes.
+    // 返回一个数组，成员是 collection 中每个 model 的 JSON 值。
     toJSON: function(options) {
       return this.map(function(model) { return model.toJSON(options); });
     },
@@ -899,17 +980,29 @@
     // Add a model, or list of models to the set. `models` may be Backbone
     // Models or raw JavaScript objects to be converted to Models, or any
     // combination of the two.
+    // 
+    // 使用 set 操作往 collection 添加一个或多个成员。
+    // models 可以是 Backbone.Model 及其子类实例，或者是纯 Object，或者二者混合组成的数组。
+    // 关于 options：
+    //    默认 merge 为 false，但允许指定为 true。
+    //    强制 add 为 true，remove 为 false，不允许修改。
     add: function(models, options) {
       return this.set(models, _.extend({merge: false}, options, addOptions));
     },
 
     // Remove a model, or a list of models from the set.
+    // 
+    // 从 collection 中移除一个或一组成员。
     remove: function(models, options) {
       options = _.extend({}, options);
       var singular = !_.isArray(models);
       models = singular ? [models] : _.clone(models);
+      // 移除成员
       var removed = this._removeModels(models, options);
+      // 如果 remove 操作非静默，并且的确移除了成员，
+      // 触发 update 事件。
       if (!options.silent && removed) this.trigger('update', this, options);
+      // 返回被移除的成员（们）。
       return singular ? removed[0] : removed;
     },
 
@@ -917,59 +1010,85 @@
     // removing models that are no longer present, and merging models that
     // already exist in the collection, as necessary. Similar to **Model#set**,
     // the core operation for updating the data contained by the collection.
+    // 
+    // 该方法是 collection 操作 models 的核心方法，重要性等同于 Model#set 方法。
+    // 该方法用以设置一组新的成员，添加新成员，删除不再具有成员资格的成员，合并已存在的成员。
     set: function(models, options) {
+      // 如果 models 为 null 或 undefined，终止 set 操作。
       if (models == null) return;
 
+      // 准备 options，默认 add: true, remove: true, merge: true。
       options = _.defaults({}, options, setOptions);
+      // 如果 options.parse 为真，且 models 非 Backbone.Model 实例，
+      // 则调用 this.parse 方法对 models 进行解析。
       if (options.parse && !this._isModel(models)) models = this.parse(models, options);
 
+      // 如果 models 不是数组，则将其转换为数组。
+      // 注意：
+      //    此处操作其实是读取了 models 副本，而非原始 models，
+      //    以避免后面对 models 的操作会影响到输入的 models。
       var singular = !_.isArray(models);
       models = singular ? [models] : models.slice();
 
-      var at = options.at;
-      if (at != null) at = +at;
-      if (at < 0) at += this.length + 1;
+      var at = options.at;  // 插入新成员的位置
+      if (at != null) at = +at;  // 将 at 强转为数字类型
+      if (at < 0) at += this.length + 1;  // 如果 at 是负数，则表示位置是倒数的，将其转换为实际位置。
 
-      var set = [];
-      var toAdd = [];
-      var toRemove = [];
-      var modelMap = {};
+      var set = [];  // 置换的成员容器
+      var toAdd = [];   // 新添加的成员容器
+      var toRemove = [];  // 待删除的成员容器
+      var modelMap = {};  // 置换成员映射表
 
-      var add = options.add;
-      var merge = options.merge;
-      var remove = options.remove;
+      var add = options.add;   // 新增标识
+      var merge = options.merge;   // 合并标识
+      var remove = options.remove;  // 移除标识
 
-      var sort = false;
-      var sortable = this.comparator && (at == null) && options.sort !== false;
-      var sortAttr = _.isString(this.comparator) ? this.comparator : null;
+      var sort = false;   // 是否需要排序
+      // 是否具备排序条件（必需定义了 comparator，不能指定插入位置，没有显式声明不排序）
+      var sortable = this.comparator && (at == null) && options.sort !== false;  
+      var sortAttr = _.isString(this.comparator) ? this.comparator : null;  // 如果 comparator 是字符串，则表示使用 model 某个属性作为排序因子
 
       // Turn bare objects into model references, and prevent invalid models
       // from being added.
       var model;
+      // 遍历 models，处理那些需要被添加到 collection 的 model
       for (var i = 0; i < models.length; i++) {
         model = models[i];
 
         // If a duplicate is found, prevent it from being added and
         // optionally merge it into the existing model.
+        // 查找待添加 model 是否已存在于 collection 中。
         var existing = this.get(model);
         if (existing) {
+          // 如果 collection 已保存有目标 model，并且待添加 model 不等于已存在 model。
+          // 即待添加的是另一个模型实例或者 Object，且 merge 为真，则合并新的 model。
           if (merge && model !== existing) {
+            // 如果待添加 model 为 Backbone.Model 实例，获取它的 attributes 作为 attrs。
             var attrs = this._isModel(model) ? model.attributes : model;
+            // 如果 parse 为真，则需要调用 existing 的 parse 方法来解析 attrs，
+            // 之后才能对 existing 进行 set 操作。
             if (options.parse) attrs = existing.parse(attrs, options);
             existing.set(attrs, options);
+            // 如果具备排序条件，并且没有排序，则重新设定 sort 以标识是否需要排序。
+            // 如果 existing 中作为排序的因子属性发生了变化，则需要将 sort 设置为真，表示要排序。
             if (sortable && !sort) sort = existing.hasChanged(sortAttr);
           }
           if (!modelMap[existing.cid]) {
             modelMap[existing.cid] = true;
             set.push(existing);
           }
+          // 将 models 中待添加的 model 替换为 existing。
           models[i] = existing;
 
         // If this is a new, valid model, push it to the `toAdd` list.
         } else if (add) {
+          // 如果 options.add 为真，则准备一个待处理的 model。
           model = models[i] = this._prepareModel(model, options);
+          // model 只能是一个 Model 实例或者 false，
+          // 如果是 false，则表示该 model 不是一个合法的 model，直接忽略。
           if (model) {
             toAdd.push(model);
+            // 添加 model 与 collection 之间的引用关系
             this._addReference(model, options);
             modelMap[model.cid] = true;
             set.push(model);
@@ -978,28 +1097,41 @@
       }
 
       // Remove stale models.
+      // 如果 options.remove 为真，则需要移除 collection.models 中多余的 model。
       if (remove) {
+        // 遍历 this.models，筛选中待移除的 model，保存在 toRemove 中
         for (i = 0; i < this.length; i++) {
           model = this.models[i];
+          // 如果置换成员映射中不包含该 model，则表示它需要被移除。
           if (!modelMap[model.cid]) toRemove.push(model);
         }
+        // 移除多余的 model。
         if (toRemove.length) this._removeModels(toRemove, options);
       }
 
       // See if sorting is needed, update `length` and splice in new models.
-      var orderChanged = false;
-      var replace = !sortable && add && remove;
+      // 标识成员的顺序是否发生变化。（使用该标识来减少没必要的排序操作，提高 set 效率）
+      var orderChanged = false;  
+      // 是否直接置换 collection.models
+      var replace = !sortable && add && remove;  
       if (set.length && replace) {
+        // 如果置换的成员数量与现有成员数量不符，或者任意置换成员与现有成员位置不符，则表示需要重新排序。
         orderChanged = this.length != set.length || _.some(this.models, function(model, index) {
           return model !== set[index];
         });
+        // 清空现有所有成员
         this.models.length = 0;
+        // 插入置换成员
         splice(this.models, set, 0);
+        // 实时维护 length 属性
         this.length = this.models.length;
       } else if (toAdd.length) {
+        // 如果具备排序条件，sort 设置为 true
         if (sortable) sort = true;
+        // 将新的成员插入到 this.models，如果未指定插入位置，则从最末尾插入。
         splice(this.models, toAdd, at == null ? this.length : at);
-        this.length = this.models.length;
+        // 实时维护 collection.length 属性
+        this.length = this.models.length; 
       }
 
       // Silently sort the collection if appropriate.
@@ -1064,6 +1196,10 @@
     },
 
     // Get a model from the set by id.
+    // 查找成员，obj 可以是一个 id 值，
+    // 或者是一个包含 collection.model.prototype.idAttribute 属性的对象，
+    // 或者是一个 model 实例。
+    // collection 首先尝试使用 id 查找，然后使用 cid 查找。
     get: function(obj) {
       if (obj == null) return void 0;
       var id = this.modelId(this._isModel(obj) ? obj.attributes : obj);
@@ -1071,6 +1207,7 @@
     },
 
     // Get the model at the given index.
+    // 获取指定位置的成员，如果 at 为负数，表示倒数位置。
     at: function(index) {
       if (index < 0) index += this.length;
       return this.models[index];
@@ -1091,11 +1228,14 @@
     // Force the collection to re-sort itself. You don't need to call this under
     // normal circumstances, as the set will maintain sort order as each item
     // is added.
+    // 
+    // 强制对 collection 成员进行排序，但如果没有声明 comparator，则抛出异常。
     sort: function(options) {
       var comparator = this.comparator;
       if (!comparator) throw new Error('Cannot sort a set without a comparator');
       options || (options = {});
 
+      // length 是用来标记，如果 comparator 是函数时，该函数接受参数的个数。
       var length = comparator.length;
       if (_.isFunction(comparator)) comparator = _.bind(comparator, this);
 
@@ -1105,6 +1245,7 @@
       } else {
         this.models.sort(comparator);
       }
+      // 如果 sort 为非静默操作，则触发 sort 事件
       if (!options.silent) this.trigger('sort', this, options);
       return this;
     },
@@ -1152,6 +1293,8 @@
 
     // **parse** converts a response into a list of models to be added to the
     // collection. The default implementation is just to pass it through.
+    // 
+    // 本方法将远端响应转换为一个列表（待添加成员列表）或者是一个成员对象。
     parse: function(resp, options) {
       return resp;
     },
@@ -1165,13 +1308,18 @@
     },
 
     // Define how to uniquely identify models in the collection.
+    // 
+    // 该方法主要用于让 collection 给每个成员生成一个唯一标识。
+    // collection 内部需要判定成员身份的操作都需要调用该方法。
     modelId: function (attrs) {
       return attrs[this.model.prototype.idAttribute || 'id'];
     },
 
-    // Private method to reset all internal state. Called when the collection
-    // is first initialized or reset.
+    // 私有方法，重置 collection 内部状态（主要是 collection 的 length, models, _byId）。
+    // 只有在 collection 进行初始化或 reset 操作时才调用该方法。
     _reset: function() {
+      // Collection 是实时维护 length 属性，
+      // 而不是通过 this.models.length 求值来获取成员长度。
       this.length = 0;
       this.models = [];
       this._byId  = {};
@@ -1179,61 +1327,101 @@
 
     // Prepare a hash of attributes (or other model) to be added to this
     // collection.
+    // 
+    // 
     _prepareModel: function(attrs, options) {
+      // 如果 attrs 是一个 Backbone.Model 实例，且该模型未属于其他 collection，则为其添加 collection 属性。
+      // 这意味着一个 model 不能同时关联到两个 collection。
       if (this._isModel(attrs)) {
         if (!attrs.collection) attrs.collection = this;
         return attrs;
       }
+      // 如果 attrs 不是 Backbone.Model 实例，
+      // 则使用 this.model 作为构造函数，构造一个 Backbone.Model 实例。
       options = options ? _.clone(options) : {};
       options.collection = this;
       var model = new this.model(attrs, options);
+      // 如果构造 model 实例过程中，没有发生数据验证失败，
+      // 则表示新构造的 model 是一个合法的 model，直接返回该 model。
+      // 否则在 collection 触发 invalid 事件，并返回 false。
       if (!model.validationError) return model;
       this.trigger('invalid', this, model.validationError, options);
       return false;
     },
 
     // Internal method called by both remove and set.
+    // 
+    // 私有方法，在 remove 和 set 操作中调用，用以移除成员。
     _removeModels: function(models, options) {
+      // 回收被移除成员的容器
       var removed = [];
+
+      // 遍历移除条件对象 models
       for (var i = 0; i < models.length; i++) {
+        // 查找待移除成员
         var model = this.get(models[i]);
+        // 如未找到则进行下一轮循环
         if (!model) continue;
 
+        // 查找待移除成员的位置，并从 this.models 中将其移除
         var index = this.indexOf(model);
         this.models.splice(index, 1);
+        // 将 collection 的 length 属性减一
         this.length--;
 
+        // 如果 remove 操作非静默，则触发 remove 事件。
+        // 在 options 中记录被移除成员的位置。
         if (!options.silent) {
           options.index = index;
           model.trigger('remove', model, this, options);
         }
 
+        // 在回收容器中保存被移除成员
         removed.push(model);
+        // 销毁被移除成员与 collection 之间的引用关系
         this._removeReference(model, options);
       }
+      // 返回 false 表示没有任何成员被移除，否则返回所有被移除成员的集合
       return removed.length ? removed : false;
     },
 
     // Method for checking whether an object should be considered a model for
     // the purposes of adding to the collection.
+    // 
+    // 私有方法，检查 model 是否是 Backbone.Model 实例
     _isModel: function (model) {
       return model instanceof Model;
     },
 
     // Internal method to create a model's ties to a collection.
+    // 私有方法，添加成员与集合之间的引用关系。
     _addReference: function(model, options) {
+      // 在 this._byId 中添加成员映射关系
+      // 首先使用成员的 cid 添加映射，
+      // 然后通过 modelId 对成员求值，添加映射关系。
+      // 也就是说，通常 collection 会保存对成员的两个引用关系，
+      // 一个是通过 cid，另一个是通过 idAttribute。
       this._byId[model.cid] = model;
       var id = this.modelId(model.attributes);
       if (id != null) this._byId[id] = model;
+      // 为 model 添加 all 事件回调。
+      // 这里是通过成员的 on 方法添加回调，而不是 listenTo 成员，
+      // 因此如果成员执行 model.off('all')，那么成员的任何事件都不会再转发到 collection。
+      // 很难说此处使用 listenTo 或 on 的优劣，但使用 on，则将事件主动权交到了成员手中。
       model.on('all', this._onModelEvent, this);
     },
 
     // Internal method to sever a model's ties to a collection.
+    // 
+    // 私有方法，用以销毁成员与集合之间的引用关系。
     _removeReference: function(model, options) {
+      // 依次删除使用 cid 与 idAttribute 对成员进行引用的关系
       delete this._byId[model.cid];
       var id = this.modelId(model.attributes);
       if (id != null) delete this._byId[id];
+      // 销毁 model 的 collection 属性
       if (this === model.collection) delete model.collection;
+      // 从 model 的 all 事件回调队列中，移除与本 collection 相关的回调函数。
       model.off('all', this._onModelEvent, this);
     },
 
@@ -1241,10 +1429,16 @@
     // Sets need to update their indexes when models change ids. All other
     // events simply proxy through. "add" and "remove" events that originate
     // in other collections are ignored.
+    // 
+    // 响应成员的 all 事件
     _onModelEvent: function(event, model, collection, options) {
+      // add 和 remove 是来自 collection 自身，因此不再转发该两个事件。
       if ((event === 'add' || event === 'remove') && collection !== this) return;
+      // 当成员发生 destroy 事件时，从 collection 移除该成员。
       if (event === 'destroy') this.remove(model, options);
       if (event === 'change') {
+        // 当成员发生 change 事件时，意味着成员的 id 属性可能发生变化，
+        // 所以需要在 collection 中重新检视成员的 idAttribute 引用关系。
         var prevId = this.modelId(model.previousAttributes());
         var id = this.modelId(model.attributes);
         if (prevId !== id) {
@@ -1252,6 +1446,7 @@
           if (id != null) this._byId[id] = model;
         }
       }
+      // 转发成员事件
       this.trigger.apply(this, arguments);
     }
 
@@ -1491,6 +1686,7 @@
     // 如果设置了 Backbone.emulateJSON 为真，则使用 application/x-www-form-urlencoded 格式提交数据。
     // 注意：
     //  这里并不是将 data 直接编码成 HTML-form 格式，而是将整个 data 封装在 model 字段中提交。
+    //  如果不这样做，当 model 为 collection 时，实际的 data 是一个数组，不适宜作为 form 提交。
     if (options.emulateJSON) {
       params.contentType = 'application/x-www-form-urlencoded';
       params.data = params.data ? {model: params.data} : {};
@@ -2006,6 +2202,8 @@
   };
 
   // Wrap an optional error callback with a fallback error event.
+  // 封装 error 回调（在 model.fetch 方法中，ajax 的 error 回调）
+  // 保证无论是否存在 options.error 回调，都会触发 model 的 error 事件。
   var wrapError = function(model, options) {
     var error = options.error;
     options.error = function(resp) {
