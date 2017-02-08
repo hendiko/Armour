@@ -117,8 +117,8 @@
     };
   };
 
-  // Backbone.Events
-  // ---------------
+  // Backbone.Events - 事件
+  // -------------------------
 
   // A module that can be mixed in to *any object* in order to provide it with
   // a custom event channel. You may bind a callback to an event with `on` or
@@ -133,11 +133,17 @@
   var Events = Backbone.Events = {};
 
   // Regular expression used to split event strings.
+  // 正则表达式：多个事件名以空格分隔。
   var eventSplitter = /\s+/;
 
   // Iterates over the standard `event, callback` (as well as the fancy multiple
   // space-separated events `"change blur", callback` and jQuery-style event
   // maps `{event: callback}`).
+  // 
+  // 遍历定义的事件。
+  // 
+  // iteratee 是迭代函数，即 onApi, offApi, triggerApi, onceMap 函数
+  // eventsApi 作用是将 events, name, callback, opts 参数整理成标准格式传递给 iteratee 调用。
   var eventsApi = function(iteratee, events, name, callback, opts) {
     var i = 0, names;
     if (name && typeof name === 'object') {
@@ -160,11 +166,15 @@
 
   // Bind an event to a `callback` function. Passing `"all"` will bind
   // the callback to all events fired.
+  // 绑定事件
   Events.on = function(name, callback, context) {
     return internalOn(this, name, callback, context);
   };
 
   // Guard the `listening` argument from the public API.
+  // 内部绑定事件函数，它是 Events.on, Events.listenTo 公开 API 内部真正实现事件绑定的函数
+  // 因此它比 Events.on, Events.listenTo 多一个参数 listening，
+  // 该参数为真，表示它正实现 listenTo 方法；否则表示它正式实现 on 方法。
   var internalOn = function(obj, name, callback, context, listening) {
     obj._events = eventsApi(onApi, obj._events || {}, name, callback, {
         context: context,
@@ -375,6 +385,7 @@
   };
 
   // Aliases for backwards compatibility.
+  // bind 作为 on 别名，unbind 作为 off 别名。（为向后兼容）
   Events.bind   = Events.on;
   Events.unbind = Events.off;
 
@@ -801,30 +812,52 @@
     // Destroy this model on the server if it was already persisted.
     // Optimistically removes the model from its collection, if it has one.
     // If `wait: true` is passed, waits for the server to respond before removal.
+    // 销毁模型（并同步从远端销毁）
+    // 如果 options.wait 为真，则等待远端同步成功后，再销毁模型。
+    // destroy 操作主要实现：
+    //    1. stopListening 所有事件（不包括自身的 on 事件）
+    //    2. 触发 destroy 事件（通知 collection 将自己从 collection 中移除）
+    //    3. （可选）同步从远端删除数据。（根据 model.isNew() 判断是否要触发 sync 事件）
+    //    
+    // 注意：
+    //  Backbone.sync 期待的是 RESTFUL API，如果使用 emulatedHTTP，
+    //  destroy 操作 success 会在 XHR 请求成功后立即执行，
+    //  即 XHR 请求成功，即视为远端删除数据成功。
+    //  因此在不重写 destroy 的方法前提下，要求远端接口响应必需以 HTTP Status Code（200 或 404）作为操作成功失败的标识，
+    //  而不能在响应的 data 中约定操作成功失败代号。
     destroy: function(options) {
       options = options ? _.clone(options) : {};
       var model = this;
       var success = options.success;
       var wait = options.wait;
 
+      // 销毁模型（停止监听事件，触发 destroy 事件）
       var destroy = function() {
         model.stopListening();
         model.trigger('destroy', model, model.collection, options);
       };
 
+      // 封装 success 回调
+      // 该回调会在请求成功后立即执行，请求成功即被视为操作成功。
       options.success = function(resp) {
         if (wait) destroy();
         if (success) success.call(options.context, model, resp, options);
+        // 如果 model.isNew() 为假，才有可能会触发 sync 事件。
         if (!model.isNew()) model.trigger('sync', model, resp, options);
       };
 
       var xhr = false;
+      // 如果模型数据不存在于远端（按照 Backbone 设计理论），
+      // 则无需与远端进行数据同步操作，直接执行 success 回调。（理论上也不触发 sync 事件）
       if (this.isNew()) {
         _.defer(options.success);
       } else {
+        // 封装异常回调
         wrapError(this, options);
+        // 与远端同步
         xhr = this.sync('delete', this, options);
       }
+      // 如果不等待，则立即销毁模型。
       if (!wait) destroy();
       return xhr;
     },
@@ -832,6 +865,9 @@
     // Default URL for the model's representation on the server -- if you're
     // using Backbone's restful methods, override this to change the endpoint
     // that will be called.
+    // 生成 model 进行 sync 时的 URL（适用于 RESTFUL API）
+    // 默认的 url 方法主要适用于 RESTFUL API，自动生成 URL。
+    // 对于非 RESTFUL API，最好重写该方法。
     url: function() {
       var base =
         _.result(this, 'urlRoot') ||
@@ -839,6 +875,7 @@
         urlError();
       if (this.isNew()) return base;
       var id = this.get(this.idAttribute);
+      // 自动补齐 base 末尾的 `/` 符号，然后追加 id
       return base.replace(/[^\/]$/, '$&/') + encodeURIComponent(id);
     },
 
@@ -986,6 +1023,8 @@
     // 关于 options：
     //    默认 merge 为 false，但允许指定为 true。
     //    强制 add 为 true，remove 为 false，不允许修改。
+    // 
+    // add 操作的默认行为是在 collection 末尾追加成员，如果成员已经存在，则不追加。
     add: function(models, options) {
       return this.set(models, _.extend({merge: false}, options, addOptions));
     },
@@ -1013,6 +1052,30 @@
     // 
     // 该方法是 collection 操作 models 的核心方法，重要性等同于 Model#set 方法。
     // 该方法用以设置一组新的成员，添加新成员，删除不再具有成员资格的成员，合并已存在的成员。
+    // 
+    // options:
+    //  add: 如果 model 存在于 models 中但不存在于 collection 中，是否要往 collection 中添加该 model。（默认为真）
+    //  remove: 如果 model 存在于 collection 中但不存在于 models 中，是否要从 collection 中删除该 model。（默认为真）
+    //  merge: 如果 model 存在于 models 中同时也存在于 collection 中，是否要将二者进行合并。（默认为真）
+    //  silent: 是否要触发事件（默认为真）
+    //  sort: 是否要自动排序（默认为真）
+    //  parse: set 操作前是否要经过 parse 方法解析，包括通过纯 Object 生成 Model 实例时，是否要调用 Model.parse 解析（默认为假）
+    //  
+    //  collection#set 操作的本质是，将目标 models 数组中的数据，合并到内部 models 数组中，
+    //  两个数组的数据合并，涉及到求数据交集、求数据并集、是否合并数据的问题。set 操作就是实现了这三个问题的解决方法。
+    //  在所有对 models 操作过程中，collection 始终保持对实例 models 的引用一致性（即从来没有更换过 models 数组的指针）
+    //  
+    //  set 操作中，会对根据每个新增的成员和移除的成员依次触发 add 和 remove 事件。
+    //  所以虽然 set 操作可以通过 options 中 add 和 remove 的值，来实现置换整个 collection.models 内部所有成员，
+    //  但你的意图是完全置换而不想逐一触发 add 或 remove 事件，那么最好使用 collection#reset 操作，该操作只会触发一个 `reset` 事件。
+    //  
+    //  如果 models 为 null 或 void 0，会导致 set 操作终止。
+    //  但如果 parse 方法返回值为 null 或 void 0，或者 parse 方法返回的数组中包含 null 或 void 0，都会被视为一个合法成员，
+    //  collection 会首先寻找该成员是否存在，如果不存在则视为新成员，使用 this.model 来构造新的实例，所以如果该 `成员` 为 null 或 void 0,
+    //  新实例也会被构造出来并可能被添加到 collection（除非 model 实例在构造时未能通过合法性验证）。
+    //  
+    //  注意：
+    //  options.parse 对 collection#set 方法有效，而对 model#set 方法无效。
     set: function(models, options) {
       // 如果 models 为 null 或 undefined，终止 set 操作。
       if (models == null) return;
@@ -1110,7 +1173,7 @@
       }
 
       // See if sorting is needed, update `length` and splice in new models.
-      // 标识成员的顺序是否发生变化。（使用该标识来减少没必要的排序操作，提高 set 效率）
+      // 标识成员的顺序是否发生变化，该标识主要充当是否触发 sort 事件的条件因子。
       var orderChanged = false;  
       // 是否直接置换 collection.models
       var replace = !sortable && add && remove;  
@@ -1135,9 +1198,12 @@
       }
 
       // Silently sort the collection if appropriate.
+      // 如果需要排序，则静默排序（阻止排序过程中触发 sort 事件）
       if (sort) this.sort({silent: true});
 
       // Unless silenced, it's time to fire all appropriate add/sort events.
+      // 现在来处理一下事件的事情，
+      // 如果如非静默操作，需要依次触发可能存在的 add, sort, update 事件。
       if (!options.silent) {
         for (i = 0; i < toAdd.length; i++) {
           if (at != null) options.index = at + i;
@@ -1149,6 +1215,7 @@
       }
 
       // Return the added (or merged) model (or models).
+      // 返回单个 model 或 models
       return singular ? models[0] : models;
     },
 
@@ -1156,41 +1223,60 @@
     // you can reset the entire set with a new list of models, without firing
     // any granular `add` or `remove` events. Fires `reset` when finished.
     // Useful for bulk operations and optimizations.
+    // 使用 reset 操作替代 set 操作来重置整个 collection.models，避免触发 add 或 remove 事件，
+    // 只有一个 `reset` 事件。
+    // 注意：
+    //  reset 操作会简单地重新生成一个空数组，并将该数组指针赋值给 collection.models，
+    //  而之前的 collection.models 会保留在 options.previousModels 作为参数传递给 reset 事件。
+    // 
+    // reset 与 set 不同之处在于，set 操作维持 collection.models 指针不变，而 reset 会更换 collection.models 指针。
     reset: function(models, options) {
       options = options ? _.clone(options) : {};
+      // 遍历现有成员，逐一销毁成员与集合之间的引用关系
       for (var i = 0; i < this.models.length; i++) {
         this._removeReference(this.models[i], options);
       }
+      // 保留之前的 models 引用
       options.previousModels = this.models;
+      // 重置内部状态（包括更换 this.models）
       this._reset();
+      // 调用 add 操作添加成员（add 操作内部是调用 set 操作）
       models = this.add(models, _.extend({silent: true}, options));
+      // 触发 reset 事件
       if (!options.silent) this.trigger('reset', this, options);
       return models;
     },
 
     // Add a model to the end of the collection.
+    // 其实 push 等同于 add，你也可以在 options 中指定 at 作为插入位置。
+    // 而且 model 可以是单个也可以是多个。
     push: function(model, options) {
       return this.add(model, _.extend({at: this.length}, options));
     },
 
     // Remove a model from the end of the collection.
+    // 移除最后一个成员。
     pop: function(options) {
       var model = this.at(this.length - 1);
       return this.remove(model, options);
     },
 
     // Add a model to the beginning of the collection.
+    // 在内部 models 数组头部追加成员。
+    // 等同于 add 操作，可以通过 options.at 参数修改 unshift 行为
     unshift: function(model, options) {
       return this.add(model, _.extend({at: 0}, options));
     },
 
     // Remove a model from the beginning of the collection.
+    // 移除第一个成员
     shift: function(options) {
       var model = this.at(0);
       return this.remove(model, options);
     },
 
     // Slice out a sub-array of models from the collection.
+    // 对 this.models 进行切片操作。
     slice: function() {
       return slice.apply(this.models, arguments);
     },
@@ -1215,12 +1301,14 @@
 
     // Return models with matching attributes. Useful for simple cases of
     // `filter`.
+    // 查找成员
     where: function(attrs, first) {
       return this[first ? 'find' : 'filter'](attrs);
     },
 
     // Return the first model with matching attributes. Useful for simple cases
     // of `find`.
+    // 查找成员
     findWhere: function(attrs) {
       return this.where(attrs, true);
     },
@@ -1235,11 +1323,13 @@
       if (!comparator) throw new Error('Cannot sort a set without a comparator');
       options || (options = {});
 
-      // length 是用来标记，如果 comparator 是函数时，该函数接受参数的个数。
+      // length 变量记录 comparator 长度，主要意图是记录 comparator 作为函数时，期待参数的个数。
       var length = comparator.length;
       if (_.isFunction(comparator)) comparator = _.bind(comparator, this);
 
       // Run sort based on type of `comparator`.
+      // 如果 comparator 是一个接受单个参数的函数，或者字符串，
+      // 则使用 sortBy 进行（升序）排序，否则对 models 进行原生数组排序。
       if (length === 1 || _.isString(comparator)) {
         this.models = this.sortBy(comparator);
       } else {
@@ -1251,6 +1341,9 @@
     },
 
     // Pluck an attribute from each model in the collection.
+    // 获取每个成员指定的 attribute。
+    // 注意：这里使用 get 方法获取属性，而不是直接使用 _.pluck(this.toJSON(), attr);
+    // 这样做避免了直接读取 model.attributes，如果 model 的 get 方法被改写了，也可以正确返回相应的值。
     pluck: function(attr) {
       return _.invoke(this.models, 'get', attr);
     },
@@ -1258,6 +1351,9 @@
     // Fetch the default set of models for this collection, resetting the
     // collection when they arrive. If `reset: true` is passed, the response
     // data will be passed through the `reset` method instead of `set`.
+    // 
+    // 与 Model#fetch 方法类似，如果 options.reset 为真，则使用 collection.reset 处理远端响应，
+    // 否则使用 collection.set 处理远端响应。
     fetch: function(options) {
       options = _.extend({parse: true}, options);
       var success = options.success;
@@ -1275,18 +1371,27 @@
     // Create a new instance of a model in this collection. Add the model to the
     // collection immediately, unless `wait: true` is passed, in which case we
     // wait for the server to agree.
+    // 通过 Model#save 方法实现的创建 model。
     create: function(model, options) {
       options = options ? _.clone(options) : {};
       var wait = options.wait;
+      // 准备 model，如果准备 model 失败，则直接终止 create 操作，并返回 false。
       model = this._prepareModel(model, options);
       if (!model) return false;
+      // 如果不等待服务器响应，则直接添加 model 到 collection.models。
+      // 这意味着，无论 model 是否 validate 与否，它都会被添加到 collection 中。
+      // 因为 model 实例化过程中，无论 validate 成功失败，都不能阻止 model 构造完成。
+      // 而等待服务器响应，在 model.save 过程中，可以对 attributes 进行合法性验证，
+      // 从而阻止 options.success 被调用，也就阻止了非法的 model 被添加到 collection 中。
       if (!wait) this.add(model, options);
+      // 否则等到服务器响应成功后再将 model 添加到 collection
       var collection = this;
       var success = options.success;
       options.success = function(model, resp, callbackOpts) {
         if (wait) collection.add(model, callbackOpts);
         if (success) success.call(callbackOpts.context, model, resp, callbackOpts);
       };
+      // 通过 model.save 方法实现 create，即 colleciton 本身是不负责真正的 model 数据同步。
       model.save(null, options);
       return model;
     },
@@ -1295,6 +1400,8 @@
     // collection. The default implementation is just to pass it through.
     // 
     // 本方法将远端响应转换为一个列表（待添加成员列表）或者是一个成员对象。
+    // parse 返回任何对象（包括 null, undefined），如果不是数组，都会被转换为数组，
+    // 然后被 collection 用作查找已存在成员的因子，或者作为 this.model 构造函数的 attributes 参数。
     parse: function(resp, options) {
       return resp;
     },
@@ -1480,9 +1587,14 @@
 
   // Creating a Backbone.View creates its initial element outside of the DOM,
   // if an existing element is not provided...
+  // 
+  // 视图构造函数
   var View = Backbone.View = function(options) {
+    // 生成唯一标识
     this.cid = _.uniqueId('view');
+    // 绑定实例属性
     _.extend(this, _.pick(options, viewOptions));
+    // 创建根节点
     this._ensureElement();
     this.initialize.apply(this, arguments);
   };
@@ -1501,6 +1613,7 @@
 
     // jQuery delegate for element lookup, scoped to DOM elements within the
     // current view. This should be preferred to global lookups where possible.
+    // 查询本视图作用域中的元素
     $: function(selector) {
       return this.$el.find(selector);
     },
@@ -1518,6 +1631,7 @@
 
     // Remove this view by taking the element out of the DOM, and removing any
     // applicable Backbone.Events listeners.
+    // 移除根节点，销毁所有监听事件。
     remove: function() {
       this._removeElement();
       this.stopListening();
@@ -1527,12 +1641,14 @@
     // Remove this view's element from the document and all event listeners
     // attached to it. Exposed for subclasses using an alternative DOM
     // manipulation API.
+    // 私有方法，移除根节点。
     _removeElement: function() {
       this.$el.remove();
     },
 
     // Change the view's element (`this.el` property) and re-delegate the
     // view's events on the new element.
+    // 设置根节点元素。包括解绑之前节点委托事件，更换根节点，重新委托事件。
     setElement: function(element) {
       this.undelegateEvents();
       this._setElement(element);
@@ -1545,6 +1661,8 @@
     // context or an element. Subclasses can override this to utilize an
     // alternative DOM manipulation API and are only required to set the
     // `this.el` property.
+    // 私有方法，设置根节点。
+    // 参数 el 可以是一个 DocumentElement，或者是一个 jQuery 实例。
     _setElement: function(el) {
       this.$el = el instanceof Backbone.$ ? el : Backbone.$(el);
       this.el = this.$el[0];
@@ -1563,6 +1681,7 @@
     // pairs. Callbacks will be bound to the view, with `this` set properly.
     // Uses event delegation for efficiency.
     // Omitting the selector binds the event to `this.el`.
+    // 委托根节点事件，缺省使用 this.events 作为委托事件。
     delegateEvents: function(events) {
       events || (events = _.result(this, 'events'));
       if (!events) return this;
@@ -1580,6 +1699,7 @@
     // Add a single event listener to the view's element (or a child element
     // using `selector`). This only works for delegate-able events: not `focus`,
     // `blur`, and not `change`, `submit`, and `reset` in Internet Explorer.
+    // 委托事件给视图根节点
     delegate: function(eventName, selector, listener) {
       this.$el.on(eventName + '.delegateEvents' + this.cid, selector, listener);
       return this;
@@ -1588,6 +1708,7 @@
     // Clears all callbacks previously bound to the view by `delegateEvents`.
     // You usually don't need to use this, but may wish to if you have multiple
     // Backbone views attached to the same DOM element.
+    // 清空根节点所有委托事件
     undelegateEvents: function() {
       if (this.$el) this.$el.off('.delegateEvents' + this.cid);
       return this;
@@ -1595,6 +1716,7 @@
 
     // A finer-grained `undelegateEvents` for removing a single delegated event.
     // `selector` and `listener` are both optional.
+    // 利用 jQuery 清除委托事件
     undelegate: function(eventName, selector, listener) {
       this.$el.off(eventName + '.delegateEvents' + this.cid, selector, listener);
       return this;
@@ -1602,6 +1724,7 @@
 
     // Produces a DOM element to be assigned to your view. Exposed for
     // subclasses using an alternative DOM manipulation API.
+    // 创建 DOM 元素（作为根节点使用）
     _createElement: function(tagName) {
       return document.createElement(tagName);
     },
@@ -1610,20 +1733,29 @@
     // If `this.el` is a string, pass it through `$()`, take the first
     // matching element, and re-assign it to `el`. Otherwise, create
     // an element from the `id`, `className` and `tagName` properties.
+    // 
+    // 创建根节点。
     _ensureElement: function() {
+      // 如果没有给定根节点，则自动生成一个根节点。
       if (!this.el) {
         var attrs = _.extend({}, _.result(this, 'attributes'));
+        // 添加根节点 ID
         if (this.id) attrs.id = _.result(this, 'id');
+        // 添加根节点类
         if (this.className) attrs['class'] = _.result(this, 'className');
+        // 创建视图根节点
         this.setElement(this._createElement(_.result(this, 'tagName')));
+        // 设置根节点 CSS 属性
         this._setAttributes(attrs);
       } else {
+        // 使用给定的根节点（Element 或 jQuery 实例）创建视图根节点。
         this.setElement(_.result(this, 'el'));
       }
     },
 
     // Set attributes from a hash on this view's element.  Exposed for
     // subclasses using an alternative DOM manipulation API.
+    // 设置根节点 CSS 属性
     _setAttributes: function(attributes) {
       this.$el.attr(attributes);
     }
@@ -1749,11 +1881,13 @@
     return Backbone.$.ajax.apply(Backbone.$, arguments);
   };
 
-  // Backbone.Router
-  // ---------------
+  // Backbone.Router - 路由
+  // -------------------------
 
   // Routers map faux-URLs to actions, and fire events when routes are
   // matched. Creating a new one sets its `routes` hash, if not set statically.
+  // 
+  // Router 构造函数
   var Router = Backbone.Router = function(options) {
     options || (options = {});
     if (options.routes) this.routes = options.routes;
@@ -1781,7 +1915,12 @@
     //       ...
     //     });
     //
+    // 手动添加路由
+    // @param route: 字符串或正则表达式，表示路由路径。
+    // @param name: 路由名称，表示路由器处理路由的方法（this[name]），或者 name 就是响应函数（相当于 callback）。
+    // @param callback: 如果没有给定 callback，则使用 this[name]，否则使用 callback 作为路由响应函数。 
     route: function(route, name, callback) {
+      // 如果 route 不是正则表达式，则将其转换为正则表达式。
       if (!_.isRegExp(route)) route = this._routeToRegExp(route);
       if (_.isFunction(name)) {
         callback = name;
@@ -1789,9 +1928,16 @@
       }
       if (!callback) callback = this[name];
       var router = this;
+      // 在 Backbone.history 中添加路由（正则表达式）
       Backbone.history.route(route, function(fragment) {
         var args = router._extractParameters(route, fragment);
+        // 如果 router.execute 方法返回 false，则不触发任何事件。
+        // 默认 router.execute 方法返回值固定为 void 0，因此一定会触发事件。
+        // 如果要阻止触发事件，只能是重写 router.execute 方法。
         if (router.execute(callback, args, name) !== false) {
+          // 是的，如果 route 第二个参数为函数，那么 name 就是空字符串。
+          // 因此触发的事件是 'route:'。
+          // router 触发了两个看似相同的事件，一个是 `route:name`，另一个是 `router`。
           router.trigger.apply(router, ['route:' + name].concat(args));
           router.trigger('route', name, args);
           Backbone.history.trigger('route', router, name, args);
@@ -1802,6 +1948,7 @@
 
     // Execute a route handler with the provided parameters.  This is an
     // excellent place to do pre-route setup or post-route cleanup.
+    // 执行路由回调函数。
     execute: function(callback, args, name) {
       if (callback) callback.apply(this, args);
     },
@@ -1815,10 +1962,14 @@
     // Bind all defined routes to `Backbone.history`. We have to reverse the
     // order of the routes here to support behavior where the most general
     // routes can be defined at the bottom of the route map.
+    // 将所有路由绑定到 `Backbone.history`。
     _bindRoutes: function() {
+      // 如果未定义路由，则终止绑定操作。
       if (!this.routes) return;
+      // 对 this.routes 求值。
       this.routes = _.result(this, 'routes');
       var route, routes = _.keys(this.routes);
+      // 遍历 this.routes，逐一添加路由
       while ((route = routes.pop()) != null) {
         this.route(route, this.routes[route]);
       }
@@ -1839,6 +1990,10 @@
     // Given a route, and a URL fragment that it matches, return the array of
     // extracted decoded parameters. Empty or unmatched parameters will be
     // treated as `null` to normalize cross-browser behavior.
+    // 
+    // 从路由路径中提取参数。
+    // @param route: 路由正则表达式
+    // @param fragment: 被 Backbone.History 确认匹配的 URL 路径。
     _extractParameters: function(route, fragment) {
       var params = route.exec(fragment).slice(1);
       return _.map(params, function(param, i) {
@@ -1858,6 +2013,8 @@
   // [onhashchange](https://developer.mozilla.org/en-US/docs/DOM/window.onhashchange)
   // and URL fragments. If the browser supports neither (old IE, natch),
   // falls back to polling.
+  // 
+  // 使用 HTML5 History API 或者 onhashchange 事件实现历史记录操作。
   var History = Backbone.History = function() {
     this.handlers = [];
     this.checkUrl = _.bind(this.checkUrl, this);
@@ -1870,12 +2027,16 @@
   };
 
   // Cached regex for stripping a leading hash/slash and trailing space.
+  // 正则表达式：用以删除字符串头部的 `#` 或 `/` 字符，以及尾部的空白。
+  // 例如：'/abc/     '.replace(routeStripper, '') 得到 'abc/'
   var routeStripper = /^[#\/]|\s+$/g;
 
   // Cached regex for stripping leading and trailing slashes.
+  // 正则表达式：删除字符串头尾的 `/` 字符（确保字符串不以 `/` 开头或结尾）
   var rootStripper = /^\/+|\/+$/g;
 
   // Cached regex for stripping urls of hash.
+  // 正则表达式：删除字符串中 '#' 字符（包含井字符）后所有字符。
   var pathStripper = /#.*$/;
 
   // Has the history handling already been started?
@@ -1904,6 +2065,7 @@
     // Unicode characters in `location.pathname` are percent encoded so they're
     // decoded for comparison. `%25` should not be decoded since it may be part
     // of an encoded parameter.
+    // 将 fragment 从百分号编码解码成 UNICODE，但不解码 `%25`，因为它有可能是被编码的参数。
     decodeFragment: function(fragment) {
       return decodeURI(fragment.replace(/%25/g, '%2525'));
     },
@@ -1944,7 +2106,9 @@
 
     // Start the hash change handling, returning `true` if the current URL matches
     // an existing route, and `false` otherwise.
+    // 启动 History 路由，如果当前 URL 匹配到了某条路由，返回 true，否则返回 false。
     start: function(options) {
+      // History 是个单例应用，不允许重复启动。
       if (History.started) throw new Error('Backbone.history has already been started');
       History.started = true;
 
@@ -2160,6 +2324,7 @@
   // Helper function to correctly set up the prototype chain for subclasses.
   // Similar to `goog.inherits`, but uses a hash of prototype properties and
   // class properties to be extended.
+  // 扩展父类函数（继承）
   var extend = function(protoProps, staticProps) {
     var parent = this;
     var child;
@@ -2197,6 +2362,7 @@
   Model.extend = Collection.extend = Router.extend = View.extend = History.extend = extend;
 
   // Throw an error when a URL is needed, and none is supplied.
+  // 异常：URL 不存在
   var urlError = function() {
     throw new Error('A "url" property or function must be specified');
   };

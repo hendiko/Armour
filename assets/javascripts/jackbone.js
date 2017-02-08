@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-01-24 16:02:01
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-01-26 08:54:03
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-02-08 11:53:05
  */
 define(function(require, exports, module) {
   var _ = require('underscore');
@@ -241,7 +241,7 @@ define(function(require, exports, module) {
 
   _.extend(Controller.prototype, attributesPrototype, {
 
-    cidPrefix: 'ctl',
+    cidPrefix: 'ctrl',
 
     idAttribute: 'id',
 
