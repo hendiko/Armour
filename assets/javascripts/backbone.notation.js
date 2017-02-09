@@ -130,6 +130,15 @@
   //     object.on('expand', function(){ alert('expanded'); });
   //     object.trigger('expand');
   //
+  // Events 所有事件行为都保存在 obj._events 属性中，
+  // 无论是 on 还是 listenTo，事件行为都是保存在事件触发者身上，
+  // listenTo 其实只是 on 的另一种调用形式。
+  // 所以，当 events.off() 方法会解绑所有事件，同时也会解除所有被监听关系。（即监听者无法再继续监听）
+  // events.stopListening() 停止监听所有事件，从被监听者身上解除事件处理。
+  // 
+  // obj._listeningTo 是保存对被监听对象的引用。
+  // obj._listenId 是每个事件触发者自己身份的 ID，当自己被其他人监听时，用以标识自己身份。
+  // obj._listeners 是所有对自己进行监听的对象引用映射。
   var Events = Backbone.Events = {};
 
   // Regular expression used to split event strings.
@@ -159,6 +168,10 @@
       }
     } else {
       // Finally, standard events.
+      //    events 事件映射表；
+      //    name 事件名称；
+      //    callback 事件处理函数；
+      //    opts 额外参数
       events = iteratee(events, name, callback, opts);
     }
     return events;
@@ -176,14 +189,17 @@
   // 因此它比 Events.on, Events.listenTo 多一个参数 listening，
   // 该参数为真，表示它正实现 listenTo 方法；否则表示它正式实现 on 方法。
   var internalOn = function(obj, name, callback, context, listening) {
+    // 执行 eventsApi 
     obj._events = eventsApi(onApi, obj._events || {}, name, callback, {
         context: context,
         ctx: obj,
         listening: listening
     });
 
+    // 如果当前是实现 listenTo 方法，需要在被监听者的 _listeners 中，添加监听者的引用关系。
     if (listening) {
       var listeners = obj._listeners || (obj._listeners = {});
+      // listening.id 是监听者的 _listenId。
       listeners[listening.id] = listening;
     }
 
@@ -193,16 +209,28 @@
   // Inversion-of-control versions of `on`. Tell *this* object to listen to
   // an event in another object... keeping track of what it's listening to
   // for easier unbinding later.
+  // Events.on 操作的逆操作，表示监听另一个对象的事件，并保持对该对象的引用，以便解绑事件。
   Events.listenTo =  function(obj, name, callback) {
+    // 如果 obj 为否，则终止 listenTo 操作。
     if (!obj) return this;
+    // 被监听对象应该有一个唯一的监听 ID，即 _listenId，用以标识被监听者身份。
     var id = obj._listenId || (obj._listenId = _.uniqueId('l'));
+    // _listeningTo 是监听行为映射表，该表用以保存所有被监听者的引用。
     var listeningTo = this._listeningTo || (this._listeningTo = {});
     var listening = listeningTo[id];
 
     // This object is not listening to any other events on `obj` yet.
     // Setup the necessary references to track the listening callbacks.
+    // 如果被监听者是首次被当前监听者监听，应初始化监听引用。
     if (!listening) {
+      // 监听者的监听 ID
       var thisId = this._listenId || (this._listenId = _.uniqueId('l'));
+      // 监听引用保存的字段：
+      //    obj: 被监听对象。
+      //    objId: 被监听对象的监听 ID。
+      //    id: 监听者监听 ID。
+      //    listeningTo: 监听映射表。
+      //    count: 监听者对被监听者监听的次数
       listening = listeningTo[id] = {obj: obj, objId: id, id: thisId, listeningTo: listeningTo, count: 0};
     }
 
@@ -212,12 +240,17 @@
   };
 
   // The reducing API that adds a callback to the `events` object.
+  // 绑定事件
   var onApi = function(events, name, callback, options) {
+    // 只有给定事件处理函数才进行事件绑定
     if (callback) {
+      // handlers 是事件处理函数组成的数组
       var handlers = events[name] || (events[name] = []);
+      // context 事件处理函数上下文（用户给出），ctx 事件触发者（默认上下文），listening 监听引用关系表
       var context = options.context, ctx = options.ctx, listening = options.listening;
+      // 监听计数加一。
       if (listening) listening.count++;
-
+      // 事件处理函数集合增加一个事件处理
       handlers.push({ callback: callback, context: context, ctx: context || ctx, listening: listening });
     }
     return events;
@@ -227,10 +260,12 @@
   // callbacks with that function. If `callback` is null, removes all
   // callbacks for the event. If `name` is null, removes all bound
   // callbacks for all events.
+  // 解绑事件
   Events.off =  function(name, callback, context) {
     if (!this._events) return this;
     this._events = eventsApi(offApi, this._events, name, callback, {
         context: context,
+        // 所有监听者引用表
         listeners: this._listeners
     });
     return this;
@@ -238,21 +273,27 @@
 
   // Tell this object to stop listening to either specific events ... or
   // to every object it's currently listening to.
+  // 停止监听
   Events.stopListening =  function(obj, name, callback) {
+    // 被监听者引用表
     var listeningTo = this._listeningTo;
     if (!listeningTo) return this;
 
+    // 需要被停止监听者 ID 集合（没有指定被监听者，则默认所有被监听者）
     var ids = obj ? [obj._listenId] : _.keys(listeningTo);
 
+    // 遍历被停止监听者 ID，逐个解除监听。
     for (var i = 0; i < ids.length; i++) {
       var listening = listeningTo[ids[i]];
 
       // If listening doesn't exist, this object is not currently
       // listening to obj. Break out early.
+      // 如果 listening 不存在，表示当前没有监听行为。
       if (!listening) break;
-
+      // 被监听者从自身解除事件行为。
       listening.obj.off(name, callback, this);
     }
+    // 当没有监听任何对象时，将 _listeningTo 属性置为 void 0。
     if (_.isEmpty(listeningTo)) this._listeningTo = void 0;
 
     return this;
