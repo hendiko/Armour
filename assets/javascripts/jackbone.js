@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-01-24 16:02:01
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-08 11:53:05
+ * @Last Modified time: 2017-02-10 14:42:02
  */
 define(function(require, exports, module) {
   var _ = require('underscore');
@@ -416,7 +416,7 @@ define(function(require, exports, module) {
 
     // 挂载到父 Application
     attach: function(name, app) {
-      app.mount(this, name);
+      app.mount(name, this);
       return this;
     },
 
@@ -541,7 +541,6 @@ define(function(require, exports, module) {
     unmount: function(child) {
       var children = this.children;
       var flag = _.isString(child);
-      var that = this;
       _.each(_.pairs(children), function(pair) {
         if (flag ? child == pair[0] : child === pair[1]) {
           pair[1].parent = null;
