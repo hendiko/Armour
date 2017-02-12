@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-10 18:25:17
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-02-11 15:10:36
  *
  * 
  */
@@ -545,6 +545,253 @@
       return delegate(this.parent, prop, slice.call(arguments, 1));
     }
   });
+
+
+  // MVCollection
+  // ------------
+
+  var Collection = Backbone.Collection;
+  var CollectionPrototype = Collection.prototype;
+
+  var MVCollection = Backbone.MVCollection = Collection.extend({
+
+    // _addViewReference: function(model, view, options) {
+    //   this._viewRefs[model.cid] = view;
+    //   model.listenTo(view, 'all', this._onViewEvent);
+    //   if (!options.silent) this.trigger('add:view', view, model, collection, options);
+    // },
+
+    // _handlerMap: {
+    //   add: '_onAddModel',
+    //   remove: '_onRemoveModel',
+    //   reset: '_onReset'
+    // },
+
+    // _onAllEvent: function(event) {
+    //   var fn = this[this._handlerMap[event]];
+    //   if (fn) fn.apply(this, arguments);
+    // },
+
+    // _onAddModel: function(model, collection, options) {
+    //   var View = options.view || this.view;
+    //   if (View) {
+    //     var opts = _.defaults({
+    //         model: model
+    //       },
+    //       _.result(options, 'viewOptions'),
+    //       _.result(this, 'viewOptions'));
+    //     var view = new View(opts);
+    //     this._addViewReference(model, view, options);
+    //   }
+    // },
+
+    // _onRemoveModel: function(model, collection, options) {
+    //   var view = this.getView(model);
+    //   this._removeViewReference(model, view, options);
+    // },
+
+    // 添加视图
+    _addViewReference: function(model, options) {
+      var View = options.view || this.view;
+      if (View) {
+        var opts = _.defaults({
+            model: model
+          },
+          _.result(options, 'viewOptions'),
+          _.result(this, 'viewOptions'));
+        var view = new View(opts);
+        if (view) {
+          this._viewRefs[model.cid] = view;
+          model.listenTo(view, 'all', this._onViewEvent);
+        }
+      }
+    },
+
+    _onReset: function() {},
+
+    // 转发 view 事件
+    _onViewEvent: function(event) {
+      var args = slice.call(arguments, 1);
+      this.trigger.apply(this, ['view:' + event].concat(args));
+      this.trigger.apply(this, ['view', event].concat(args));
+    },
+
+    // 覆写 Backbone.Collection.prototype._removeModels 方法
+    _removeModels: function(models, options) {
+      var removed = [];
+
+      for (var i = 0; i < models; i++) {
+        var model = this.get(models[i]);
+        if (!model) continue;
+        var index = this.indexOf(model);
+        this.models.splice(index, 1);
+        this.length--;
+        if (!options.silent) {
+          options.index = index;
+          // trigger event `remove:view` if it's necessary.
+          model.trigger('remove:view', view, model, this, options);
+          model.trigger('remove', model, this, options);
+        }
+        removed.push(model);
+        // remove reference to view.
+        this._removeViewReference(model, options);
+        this._removeReference(model, options);
+      }
+      return removed.length ? removed : false;
+    },
+
+    // 移除 view 的引用
+    _removeViewReference: function(model, options) {
+      var view = this._viewRefs[model.cid];
+      if (view) model.stopListening(view, 'all', this._onViewEvent);
+      delete this._viewRefs[model.cid];
+    },
+
+    constructor: function(models, options) {
+      options || (options = {});
+      if (options.view) this.view = options.view;
+      if (options.viewOptions) this.view = options.viewOptions;
+      this._viewRefs = {};
+      return Collection.prototype.constructor.apply(this, arguments);
+    },
+
+    getView: function(obj) {
+      var model = this.get(obj);
+      return model ? this._viewRefs[model.cid] : null;
+    },
+
+    reset: function(models, options) {
+      options = options ? _.clone(options) : {};
+      // 遍历现有成员，逐一销毁成员与集合之间的引用关系
+      for (var i = 0; i < this.models.length; i++) {
+        // todo: continue
+        // 移除视图时，是否要同时销毁视图？
+        this._removeViewReference(this.models[i], options);
+        this._removeReference(this.models[i], options);
+      }
+      // 保留之前的 models 引用
+      options.previousModels = this.models;
+      // 重置内部状态（包括更换 this.models）
+      this._reset();
+      // 调用 add 操作添加成员（add 操作内部是调用 set 操作）
+      models = this.add(models, _.extend({silent: true}, options));
+      // 触发 reset 事件
+      if (!options.silent) this.trigger('reset', this, options);
+      return models;
+    },
+
+
+
+    set: function(models, options) {
+      if (models == null) return;
+
+      options = _.defaults({}, options, setOptions);
+      if (options.parse && !this._isModel(models)) models = this.parse(models, options);
+
+      var singular = !_.isArray(models);
+      models = singular ? [models] : models.slice();
+
+      var at = options.at; // 插入新成员的位置
+      if (at != null) at = +at; // 将 at 强转为数字类型
+      if (at < 0) at += this.length + 1; // 如果 at 是负数，则表示位置是倒数的，将其转换为实际位置。
+
+      var set = []; // 置换的成员容器
+      var toAdd = []; // 新添加的成员容器
+      var toRemove = []; // 待删除的成员容器
+      var modelMap = {}; // 置换成员映射表
+
+      var add = options.add; // 新增标识
+      var merge = options.merge; // 合并标识
+      var remove = options.remove; // 移除标识
+
+      var sort = false; // 是否需要排序
+      var sortable = this.comparator && (at == null) && options.sort !== false;
+      var sortAttr = _.isString(this.comparator) ? this.comparator : null; // 如果 comparator 是字符串，则表示使用 model 某个属性作为排序因子
+
+      var model;
+      var view;
+      var viewRefs = this._viewRefs;  // the map of view references
+      for (var i = 0; i < models.length; i++) {
+        model = models[i];
+
+        var existing = this.get(model);
+        if (existing) {
+          if (merge && model !== existing) {
+            var attrs = this._isModel(model) ? model.attributes : model;
+            if (options.parse) attrs = existing.parse(attrs, options);
+            existing.set(attrs, options);
+            if (sortable && !sort) sort = existing.hasChanged(sortAttr);
+          }
+          if (!modelMap[existing.cid]) {
+            modelMap[existing.cid] = true;
+            set.push(existing);
+          }
+          models[i] = existing;
+
+        } else if (add) {
+          model = models[i] = this._prepareModel(model, options);
+          if (model) {
+            toAdd.push(model);
+            this._addViewReference(model, options);  // add view
+            this._addReference(model, options);
+            modelMap[model.cid] = true;
+            set.push(model);
+          }
+        }
+      }
+
+      if (remove) {
+        for (i = 0; i < this.length; i++) {
+          model = this.models[i];
+          if (!modelMap[model.cid]) toRemove.push(model);
+        }
+        if (toRemove.length) this._removeModels(toRemove, options);
+      }
+
+      var orderChanged = false;
+      var replace = !sortable && add && remove;
+      if (set.length && replace) {
+        orderChanged = this.length != set.length || _.some(this.models, function(model, index) {
+          return model !== set[index];
+        });
+        this.models.length = 0;
+        splice(this.models, set, 0);
+        this.length = this.models.length;
+      } else if (toAdd.length) {
+        if (sortable) sort = true;
+        splice(this.models, toAdd, at == null ? this.length : at);
+        this.length = this.models.length;
+      }
+
+      if (sort) this.sort({
+        silent: true
+      });
+
+      if (!options.silent) {
+        for (i = 0; i < toAdd.length; i++) {
+          if (at != null) options.index = at + i;
+          model = toAdd[i];
+          model.trigger('add', model, this, options);
+          // trigger event `add:view` if there is a new view.
+          view = viewRefs[model.cid];
+          if (view) this.trigger('add:view', view, model, this, options);
+        }
+        if (sort || orderChanged) this.trigger('sort', this, options);
+        if (toAdd.length || toRemove.length) this.trigger('update', this, options);
+      }
+
+      return singular ? models[0] : models;
+    },
+
+    views: function() {
+      var that = this;
+      return _.map(arguments.length ? arguments : this.models, function(arg) {
+        return that.getView(arg);
+      });
+    }
+
+  });
+
 
   return Backbone;
 }));
