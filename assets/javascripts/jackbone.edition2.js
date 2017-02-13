@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-02-11 15:10:36
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-02-13 16:00:34
  *
  * 
  */
@@ -547,48 +547,182 @@
   });
 
 
+  // View
+  // ------
+
+  var wrapper = function(ctx, method, options) {
+    var fn = ctx[method] || _.noop;
+    options || (options = {});
+    var before = options.before;
+    var done = options.done;
+    var after = options.after;
+    return function() {
+      var args = _.toArray(arguments);
+
+      if (before) before.apply(this, args);
+      ctx.trigger.apply(this, [method + ':before', ctx].concat(args));
+      
+      var result = fn.apply(ctx, args);
+      
+      if (done) done.apply(this, args);
+      ctx.trigger.apply(this, [method, ctx].concat(args));
+      
+      if (after) after.apply(this, args);
+      ctx.trigger.apply(this, [method + ':after', ctx].concat(args));
+      return result;
+    };
+  };
+
+  var viewOptions = ['controller', 'model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events'];
+
+  var View = Backbone.View = Backbone.View.extend({
+
+    _nodeRefs: null,
+
+    _nodeViews: null,
+
+    _nodeElements: null,
+
+    _viewRefs: null,
+
+    // 缓存节点 jQuery 对象
+    _cacheNodeElements: function() {
+      var nodes = this.nodes;
+      var that = this;
+      var cache = this._nodeElements || (this._nodeElements = {});
+      var $selector;
+      _.each(nodes, function(selector, node) {
+        $selector = that.$(selector);
+        if ($selector.length) cache[node] = $selector;
+      });
+      return this;
+    },
+
+    nodes: null,
+
+    parent: null,
+
+    children: null,
+
+    constructor: function(options) {
+      // 生成唯一标识
+      this.cid = _.uniqueId('view');
+
+      options || (options= {});
+      // 绑定实例属性
+      _.extend(this, _.pick(options, viewOptions));
+      // 创建根节点
+      this._ensureElement();
+
+      this._nodeRefs = {};
+
+      // 子节点
+      this.nodes = _.extend({}, this.nodes, options.nodes);
+
+      // wrap methods
+      this.render = wrapper(this, 'render', {done: this._cacheNodeElements});
+      this.remove = wrapper(this, 'remove');
+      this.initialize.apply(this, arguments);
+    },
+
+    // 激活子节点
+    activate: function(node, view, options) {},
+
+    // 绑定到父视图
+    attach: function() {},
+
+    // 停用子节点
+    deactivate: function(node, view, options) {},
+
+    // 从父视图脱离
+    detach: function() {},
+
+    // 返回缓存的 node jQuery 对象
+    getNode: function(nodeName) {
+      return this._nodeElements && this._nodeElements[nodeName];
+    },
+
+    getNodePath: function(nodeName) {
+      return this.nodes[nodeName];
+    },
+
+    // 是否存在给定名称 Node
+    hasNode: function(nodeName){
+      return _.has(this.nodes, nodeName);
+    },
+
+    // 挂载子视图
+    mount: function(node, views, options) {
+      if (!path || !view) return this;
+      if (!_.isArray(view)) view = [view]; 
+    },
+
+    removeNode: function(nodeName, options) {
+      // todo: 移除 node 同时移除 node 下所有视图
+      var nodes = this.nodes;
+      var names = nodeName ? [nodeName] : _.keys(nodes);
+      _.each(names, function(name) {
+        delete nodes[name];
+      });
+      return this;
+    },
+
+    // setNode: function(nodeName, nodePath, options) {
+    //   // todo: 新设置的节点只能在下次渲染后生效
+    //   // todo: 更改 nodePath 时，是否需要重新挂载该 node 下的视图？
+    //   var attrs;
+    //   if (typeof nodeName === 'object') {
+    //     attrs = nodeName;
+    //     options = nodePath;
+    //   } else {
+    //     (attrs = {})[nodeName] = nodePath;
+    //   }
+    //   var nodes = this.nodes || (this.nodes = {});
+    //   _.each(attrs, function(val, key) {
+    //     if (key && val) {
+    //       nodes[key] = val;
+    //     }
+    //   });
+    //   return this;
+    // },
+
+    // 卸载子视图
+    unmount: function(path, views, options) {}
+  });
+
+
   // MVCollection
   // ------------
+
+  var setOptions = {
+    add: true,
+    remove: true,
+    merge: true
+  };
+  // 将数组 insert 成员，依次插入到数组 array 的 at 位置。
+  // 例如：
+  // var a = [1,2,3], b = [4,5,6];
+  // splice(a, b, 1);
+  // 数组 a 变成 [1, 4, 5, 6, 2, 3]
+  var splice = function(array, insert, at) {
+    // 确保 at 是符合 array 长度的合法位置（不小于 0，不大于 array 长度）。
+    at = Math.min(Math.max(at, 0), array.length);
+    // 生成切片后半部分等长 Array。
+    var tail = Array(array.length - at);
+    // 计算待插入 Array 长度
+    var length = insert.length;
+    // 将 array 后半部分成员复制到容器 tail。
+    for (var i = 0; i < tail.length; i++) tail[i] = array[i + at];
+    // 将 insert 成员依次插入到 array 的后半部分。  
+    for (i = 0; i < length; i++) array[i + at] = insert[i];
+    // 将 tail 中成员依次继续插入到 array 尾部。
+    for (i = 0; i < tail.length; i++) array[i + length + at] = tail[i];
+  };
 
   var Collection = Backbone.Collection;
   var CollectionPrototype = Collection.prototype;
 
   var MVCollection = Backbone.MVCollection = Collection.extend({
-
-    // _addViewReference: function(model, view, options) {
-    //   this._viewRefs[model.cid] = view;
-    //   model.listenTo(view, 'all', this._onViewEvent);
-    //   if (!options.silent) this.trigger('add:view', view, model, collection, options);
-    // },
-
-    // _handlerMap: {
-    //   add: '_onAddModel',
-    //   remove: '_onRemoveModel',
-    //   reset: '_onReset'
-    // },
-
-    // _onAllEvent: function(event) {
-    //   var fn = this[this._handlerMap[event]];
-    //   if (fn) fn.apply(this, arguments);
-    // },
-
-    // _onAddModel: function(model, collection, options) {
-    //   var View = options.view || this.view;
-    //   if (View) {
-    //     var opts = _.defaults({
-    //         model: model
-    //       },
-    //       _.result(options, 'viewOptions'),
-    //       _.result(this, 'viewOptions'));
-    //     var view = new View(opts);
-    //     this._addViewReference(model, view, options);
-    //   }
-    // },
-
-    // _onRemoveModel: function(model, collection, options) {
-    //   var view = this.getView(model);
-    //   this._removeViewReference(model, view, options);
-    // },
 
     // 添加视图
     _addViewReference: function(model, options) {
@@ -602,12 +736,11 @@
         var view = new View(opts);
         if (view) {
           this._viewRefs[model.cid] = view;
+          if (options.render === true && _.isFunction(view.render)) view.render();
           model.listenTo(view, 'all', this._onViewEvent);
         }
       }
     },
-
-    _onReset: function() {},
 
     // 转发 view 事件
     _onViewEvent: function(event) {
@@ -617,6 +750,7 @@
     },
 
     // 覆写 Backbone.Collection.prototype._removeModels 方法
+    // @override
     _removeModels: function(models, options) {
       var removed = [];
 
@@ -643,10 +777,16 @@
     // 移除 view 的引用
     _removeViewReference: function(model, options) {
       var view = this._viewRefs[model.cid];
-      if (view) model.stopListening(view, 'all', this._onViewEvent);
+      if (view) {
+        model.stopListening(view, 'all', this._onViewEvent);
+        // 默认移除视图同时销毁视图
+        if (options.removeView !== false) view.remove();
+      }
       delete this._viewRefs[model.cid];
+      return view;
     },
 
+    // @override
     constructor: function(models, options) {
       options || (options = {});
       if (options.view) this.view = options.view;
@@ -655,33 +795,43 @@
       return Collection.prototype.constructor.apply(this, arguments);
     },
 
+    // 获取指定 model 对应的视图
     getView: function(obj) {
       var model = this.get(obj);
       return model ? this._viewRefs[model.cid] : null;
     },
 
+    // @override
     reset: function(models, options) {
       options = options ? _.clone(options) : {};
+      if (!options.silent) this.trigger('reset:before', this, options);
+      var previousViews = [];
+      var view;
       // 遍历现有成员，逐一销毁成员与集合之间的引用关系
       for (var i = 0; i < this.models.length; i++) {
-        // todo: continue
-        // 移除视图时，是否要同时销毁视图？
-        this._removeViewReference(this.models[i], options);
+        view = this._removeViewReference(this.models[i], options);
+        previousViews.push(view);
         this._removeReference(this.models[i], options);
       }
-      // 保留之前的 models 引用
+      // 保留之前的 models 以及 views 引用
       options.previousModels = this.models;
+      options.previousViews = previousViews;
       // 重置内部状态（包括更换 this.models）
       this._reset();
       // 调用 add 操作添加成员（add 操作内部是调用 set 操作）
-      models = this.add(models, _.extend({silent: true}, options));
+      models = this.add(models, _.extend({
+        silent: true
+      }, options));
       // 触发 reset 事件
-      if (!options.silent) this.trigger('reset', this, options);
+      if (!options.silent) {
+        this.trigger('reset', this, options);
+        this.trigger('reset:after', this, options);
+      }
       return models;
     },
 
-
-
+    // @override
+    // 设置
     set: function(models, options) {
       if (models == null) return;
 
@@ -710,7 +860,7 @@
 
       var model;
       var view;
-      var viewRefs = this._viewRefs;  // the map of view references
+      var viewRefs = this._viewRefs; // the map of view references
       for (var i = 0; i < models.length; i++) {
         model = models[i];
 
@@ -732,7 +882,7 @@
           model = models[i] = this._prepareModel(model, options);
           if (model) {
             toAdd.push(model);
-            this._addViewReference(model, options);  // add view
+            this._addViewReference(model, options); // add view
             this._addReference(model, options);
             modelMap[model.cid] = true;
             set.push(model);
@@ -783,15 +933,16 @@
       return singular ? models[0] : models;
     },
 
+    view: Backbone.View,
+
+    // 获取所有视图
     views: function() {
       var that = this;
       return _.map(arguments.length ? arguments : this.models, function(arg) {
         return that.getView(arg);
       });
     }
-
   });
-
 
   return Backbone;
 }));

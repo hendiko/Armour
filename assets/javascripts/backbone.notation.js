@@ -2365,35 +2365,40 @@
   // Helper function to correctly set up the prototype chain for subclasses.
   // Similar to `goog.inherits`, but uses a hash of prototype properties and
   // class properties to be extended.
-  // 扩展父类函数（继承）
+  // `extend` 函数通过设置子类的原型链实现继承机制，它可以同时扩展父类的原型
+  // 属性和类属性。
   var extend = function(protoProps, staticProps) {
-    var parent = this;
-    var child;
+    var parent = this;  // 上下文应指向父类
+    var child; // 子类（构造函数）
 
-    // The constructor function for the new subclass is either defined by you
-    // (the "constructor" property in your `extend` definition), or defaulted
-    // by us to simply call the parent constructor.
+    // 当传入原型对象包含 `constructor` 属性，则直接作为子类的构造函数。
+    // 否则新建一个构造函数，并在构造函数中调用父类构造函数。
     if (protoProps && _.has(protoProps, 'constructor')) {
       child = protoProps.constructor;
     } else {
       child = function(){ return parent.apply(this, arguments); };
     }
 
-    // Add static properties to the constructor function, if supplied.
+    // 将父类静态属性和新传入的静态属性扩展到子类上。
     _.extend(child, parent, staticProps);
 
-    // Set the prototype chain to inherit from `parent`, without calling
-    // `parent` constructor function.
+    // 设置中间人（或者代理构造函数），将中间人 constructor 属性设置为子类构造函数。
+    // 将子类的 prototype 设置为中间人实例，从而使得子类处于中间人原型链上。
+    // 避免将子类 prototype 直接指向中间人的 prototype，可以使得对父类 prototype 的修改，
+    // 直接作用到子类上，但对子类 prototype 的修改，会被父类实例隔绝，从而避免作用到父类身上。
+    // 
+    // 使用中间人连接 child 和 parent，不将 child 的 prototype 直接指向 parent 的 prototype。
+    // 原因在于子类 prototype 应指向父类实例，从而避免原型链上的逆向作用。
+    // 使用中间人，将中间人的 prototype 指向 parent 的 prototype，
+    // 可以保证实现继承同时避免调用 parent 的构造函数，从而带来副作用。
     var Surrogate = function(){ this.constructor = child; };
     Surrogate.prototype = parent.prototype;
     child.prototype = new Surrogate;
 
-    // Add prototype properties (instance properties) to the subclass,
-    // if supplied.
+    // 扩展子类的原型（实例方法）
     if (protoProps) _.extend(child.prototype, protoProps);
 
-    // Set a convenience property in case the parent's prototype is needed
-    // later.
+    // 添加 __super__ 属性指向父类的原型，以便在子类中可以调用父类原型。
     child.__super__ = parent.prototype;
 
     return child;
