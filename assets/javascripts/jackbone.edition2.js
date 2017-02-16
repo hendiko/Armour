@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-13 16:00:34
+ * @Last Modified time: 2017-02-16 18:32:48
  *
  * 
  */
@@ -34,6 +34,9 @@
 
 }(function(root, Jackbone, _, $, Backbone) {
 
+  // 事件分隔符
+  var eventSplitter = /\s+/;
+
   // 声明 underscore 副本
   _ = _.clone(_);
 
@@ -59,6 +62,149 @@
 
   // 切片函数
   var slice = Array.prototype.slice;
+
+  var trim = function(regexp) {
+    return function(str) {
+      return str.replace(regexp, '');
+    };
+  }(/^\s*|\s*$/g);
+
+  // Events
+  // =======
+  var prepareEvent = function(event) {
+    if (!event) return {
+      all: 'all'
+    };
+    if (_.isString(event)) {
+      event = trim(event);
+      // TODO
+    }
+
+    var map = {};
+    if (_.isString(event)) event = trim(event);
+    if (!event) return {
+      all: 'all'
+    };
+
+  };
+
+  var prepareEvent = function(event) {
+    if (_.isArray(event)) event = event.join(' ');
+    if (event) {
+      if (_.isString(event)) {
+        event = _.reduce(trim(event).split(eventSplitter), function(memo, name) {
+          if (name) memo[name] = name;
+          return memo;
+        }, {});
+      } else {
+        event = _.reduce(event, function(memo, val, key) {
+          if (val && _.isString(val)) {
+
+          }
+        }, {});
+      }
+    } else {
+      event = {
+        all: 'all'
+      };
+    }
+  };
+
+
+  var callbackApi = function(destination, event) {
+    var args = slice.call(arguments, 1);
+    if (destination !== 'all') args[0] = destination;
+    this.trigger.apply(this, args);
+  };
+
+  var forwardApi = function(me, other, original, destination) {
+    destination || (destination = original);
+    var callback = _.partial(callbackApi, destination);
+    var _forwardings = (me._forwardings || (me._forwardings = {}));
+    var forwarding = _forwardings[other._listenId] || (_forwardings[other._listenId] = []);
+    var forwardMap = {
+      original: original,
+      destination: destination
+      callback: callback
+    };
+    forwarding.push(forwardMap);
+    me.listenTo(other, 'all', callback);
+  };
+
+  var stopForwarding = function(other, original, destination) {
+    var _forwardings = this._forwardings;
+    if (_.isEmpty(_forwardings)) return this;
+    var forwarding = _forwardings[other._listenId];
+    if (_.isEmpty(forwarding)) return this;
+
+    var removed = [];
+    var remain = [];
+    var map;
+    var flag;
+    for (var i = 0; i < forwarding.length; i++) {
+      map = forwarding[i];
+      if (original && destination) {
+        flag = !!(original === map.original && destination === map.destination);
+      } else if (!original && !destination) {
+        flag = true;
+      } else if (original && !destination) {
+        flag = !!(original === map.original);
+      } else if (!original && destination) {
+        flag = !!(destination === map.destination);
+      }
+      if (flag) {
+        this.stopListening(other, 'all', map.callback);
+        removed.push(map);
+      } else {
+        remain.push(map);
+      }
+    }
+
+    if (removed.length > 0) {
+      forwarding.length = 0;
+      for (i = 0; i < remain.length; i++) {
+        forwarding.push(remain[i]);
+      }
+    }
+
+    if (forwarding.length === 0) {
+      delete _forwardings[other._listenId];
+    }
+
+    return this;
+  };
+
+
+  var forwardApi = function(forwards, name, callback, options) {};
+
+
+  var forwardApi = function(me, other) {
+    me.listenTo(other, 'all', function(event) {
+      this.
+    });
+  };
+
+  _.extend(Events, {
+
+    _forwardHandler: function(event) {
+      var forwardMap =
+
+        if (!!this._forwardAll) this.trigger.apply(this, arguments);
+    },
+
+    _forwardApi: function(other) {
+      this.listenTo(other, 'all', this._forwardHandler);
+    },
+
+    forward: function(other, event) {
+      var map = prepareEvent(event);
+      this.listenTo(other, 'all', )
+    },
+
+    forwardOnce: function(other, event) {},
+
+    stopForwarding: function(other, event) {}
+  });
 
 
   // Attributes
@@ -549,6 +695,7 @@
 
   // View
   // ------
+  // todo: continue to work on this object.
 
   var wrapper = function(ctx, method, options) {
     var fn = ctx[method] || _.noop;
@@ -561,12 +708,12 @@
 
       if (before) before.apply(this, args);
       ctx.trigger.apply(this, [method + ':before', ctx].concat(args));
-      
+
       var result = fn.apply(ctx, args);
-      
+
       if (done) done.apply(this, args);
       ctx.trigger.apply(this, [method, ctx].concat(args));
-      
+
       if (after) after.apply(this, args);
       ctx.trigger.apply(this, [method + ':after', ctx].concat(args));
       return result;
@@ -608,7 +755,7 @@
       // 生成唯一标识
       this.cid = _.uniqueId('view');
 
-      options || (options= {});
+      options || (options = {});
       // 绑定实例属性
       _.extend(this, _.pick(options, viewOptions));
       // 创建根节点
@@ -620,7 +767,9 @@
       this.nodes = _.extend({}, this.nodes, options.nodes);
 
       // wrap methods
-      this.render = wrapper(this, 'render', {done: this._cacheNodeElements});
+      this.render = wrapper(this, 'render', {
+        done: this._cacheNodeElements
+      });
       this.remove = wrapper(this, 'remove');
       this.initialize.apply(this, arguments);
     },
@@ -647,14 +796,14 @@
     },
 
     // 是否存在给定名称 Node
-    hasNode: function(nodeName){
+    hasNode: function(nodeName) {
       return _.has(this.nodes, nodeName);
     },
 
     // 挂载子视图
     mount: function(node, views, options) {
       if (!path || !view) return this;
-      if (!_.isArray(view)) view = [view]; 
+      if (!_.isArray(view)) view = [view];
     },
 
     removeNode: function(nodeName, options) {
