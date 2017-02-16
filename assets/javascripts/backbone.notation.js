@@ -301,28 +301,35 @@
 
   // The reducing API that removes a callback from the `events` object.
   var offApi = function(events, name, callback, options) {
+    // events 不存在，终止 off 操作
     if (!events) return;
 
     var i = 0, listening;
+    // context 指定上下文，listeners 监听者
     var context = options.context, listeners = options.listeners;
 
     // Delete all events listeners and "drop" events.
+    // 没有给定任何事件名、事件回调或上下文，则移除所有监听者，以及事件。
     if (!name && !callback && !context) {
+      // 生成所有监听者 id。
       var ids = _.keys(listeners);
+      // 遍历所有监听者 id，逐一接触引用关系
       for (; i < ids.length; i++) {
         listening = listeners[ids[i]];
-        delete listeners[listening.id];
-        delete listening.listeningTo[listening.objId];
+        delete listeners[listening.id];  // 移除监听者引用
+        delete listening.listeningTo[listening.objId];  // 移除监听关系
       }
       return;
     }
 
+    // 如果没有指定事件名称，则移除全部事件
     var names = name ? [name] : _.keys(events);
     for (; i < names.length; i++) {
       name = names[i];
       var handlers = events[name];
 
       // Bail out if there are no events stored.
+      // 如果没有回调函数，终止本次循环
       if (!handlers) break;
 
       // Replace events if there are any remaining.  Otherwise, clean up.

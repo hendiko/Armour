@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-16 18:32:48
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-02-16 23:56:55
  *
  * 
  */
@@ -117,8 +117,9 @@
     this.trigger.apply(this, args);
   };
 
-  var forwardApi = function(me, other, original, destination) {
+  var forwardApi = function(me, other, original, destination, options) {
     destination || (destination = original);
+    options || (options = {});
     var callback = _.partial(callbackApi, destination);
     var _forwardings = (me._forwardings || (me._forwardings = {}));
     var forwarding = _forwardings[other._listenId] || (_forwardings[other._listenId] = []);
@@ -128,14 +129,25 @@
       callback: callback
     };
     forwarding.push(forwardMap);
-    me.listenTo(other, 'all', callback);
+    if (options.once) {
+      me.listenToOnce(other, 'all', function() {
+        callback.apply(this, arguments);
+        stopForwardingApi(me, other, original, destination, {
+          callback: callback
+        });
+      });
+    } else {
+      me.listenTo(other, 'all', callback);
+    }
+
   };
 
-  var stopForwarding = function(other, original, destination) {
-    var _forwardings = this._forwardings;
-    if (_.isEmpty(_forwardings)) return this;
+  var stopForwardingApi = function(me, other, original, destination, options) {
+    options || (options = {});
+    var _forwardings = me._forwardings;
+    if (_.isEmpty(_forwardings)) return me;
     var forwarding = _forwardings[other._listenId];
-    if (_.isEmpty(forwarding)) return this;
+    if (_.isEmpty(forwarding)) return me;
 
     var removed = [];
     var remain = [];
@@ -143,7 +155,9 @@
     var flag;
     for (var i = 0; i < forwarding.length; i++) {
       map = forwarding[i];
-      if (original && destination) {
+      if (options.callback) {
+        flag = !!(original === map.original && destination === map.destination && options.callback === map.callback);
+      } else if (original && destination) {
         flag = !!(original === map.original && destination === map.destination);
       } else if (!original && !destination) {
         flag = true;
@@ -153,7 +167,7 @@
         flag = !!(destination === map.destination);
       }
       if (flag) {
-        this.stopListening(other, 'all', map.callback);
+        me.stopListening(other, 'all', map.callback);
         removed.push(map);
       } else {
         remain.push(map);
@@ -171,30 +185,11 @@
       delete _forwardings[other._listenId];
     }
 
-    return this;
-  };
+    return me;
 
-
-  var forwardApi = function(forwards, name, callback, options) {};
-
-
-  var forwardApi = function(me, other) {
-    me.listenTo(other, 'all', function(event) {
-      this.
-    });
   };
 
   _.extend(Events, {
-
-    _forwardHandler: function(event) {
-      var forwardMap =
-
-        if (!!this._forwardAll) this.trigger.apply(this, arguments);
-    },
-
-    _forwardApi: function(other) {
-      this.listenTo(other, 'all', this._forwardHandler);
-    },
 
     forward: function(other, event) {
       var map = prepareEvent(event);
