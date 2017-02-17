@@ -139,6 +139,46 @@
   // obj._listeningTo 是保存对被监听对象的引用。
   // obj._listenId 是每个事件触发者自己身份的 ID，当自己被其他人监听时，用以标识自己身份。
   // obj._listeners 是所有对自己进行监听的对象引用映射。
+  // 
+  // Backbone.Events 的 listenTo 与 stopListening 方法实现原理：
+  // 例如监听者 listener 和被监听者 listenee。
+  // 
+  // `listener.listenTo(listenee, 'any', callback);`
+  // 
+  // 整个监听过程大致可以分为三个部分：
+  // 1. 生成监听关系表：
+  // 
+  //  ```
+  //  {
+  //    count: Int,   // 监听次数，当 count 为 0 时，表示二者不再存在任何监听关系，从双方删除监听关系。
+  //    id: String,   // listener._listenId，标识监听者身份。
+  //    listeningTo: Object,  // listener._listeningTo，保存所有监听关系表（以被监听者 ID 作为主键）
+  //    obj: listenee,  // listenee，被监听者。
+  //    objId: String   // listenee._listenId，被监听者 ID。
+  //  }
+  //  ```
+  //  
+  // 2. 在 listenee 中保存事件以及事件回调，即在 listenee._events['any'] 队列中推入事件处理关系表。
+  // 
+  // ```
+  // {
+  //  callback: Function,  // 回调函数
+  //  context: Object,
+  //  ctx: Object, 
+  //  listening: Object   // listening 就是监听关系表
+  // }
+  // ```
+  //  
+  //  3. 在双方各自添加监听关系：
+  //    在 listener 方面，以 listenee._listenId 为主键，保存在 listener._listeningTo 字段。
+  //    在 listenee 方面，以 listener._listenId 为主键，保存在 listenee._listeners 字段。
+  //    即以下等式是成立的 `listener._listeningTo[listenee._listenId] === listenee._listeners[listener._listenId]`。
+  // 
+  // `listener.stopListening(listenee, 'any', callback);`
+  // 
+  // 停止监听过程其实是通过 `listenee.off('any', callback， listener)` 来实现，这一过程包括：
+  //    从 listenee._events 移除事件处理关系表。
+  //    通过监听关系表里的 count 字段减一并判断是否为 0，从而决定是否要从双方移除监听关系。
   var Events = Backbone.Events = {};
 
   // Regular expression used to split event strings.
