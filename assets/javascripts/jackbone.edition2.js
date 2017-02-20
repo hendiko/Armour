@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-20 14:52:49
+ * @Last Modified time: 2017-02-20 18:33:44
  *
  * todo: 
  * 1. stopForwarding 和 stopListening, stopWatching 应保持同时销毁
@@ -819,10 +819,34 @@
   // Backbone.Model
   // ===========
   // 
-  // watcher._watchings, watchee._watchers
+  // 增强原 Backbone.Model 类，增加了 `watch` 和 `stopWatching` 实例方法。
+  // `watch` 方法用以在不同模型之间同步数据，`stopWatching` 方法用以停止不同模型之间的数据同步。
+  // 
+  // `watch` 方法与 `change` 事件的区别：
+  // 使用 `watch` 方法可以将数据同步逻辑与数据修改逻辑分隔开，
+  // 数据同步用以解决模型之间数据一致性的需求，类似于数据表外键的同步。
+  // 而 `change` 事件应被用于更关注数据发生变化后，应处理的其他逻辑事务，例如 UI 渲染。
+  // 
+  // 观察者(watcher) 的 `_watchings` 字段用以保存所有外键关系。
+  // 被观察者 (watchee) 的 `_watchers` 字段用以保存所有观察者的引用。
   // 
   _.extend(Backbone.Model.prototype, {
 
+    // @param obj 被观察者。
+    // @param original 同步起始字段
+    // @param destination 同步终点字段
+    // 
+    // `watch` 方法支持传参方式：
+    //    1. watch(obj);
+    //    2. watch(obj, original, destination);
+    //    3. watch(obj, {original: destination});
+    //    4. watch(obj, [original1, original2, ...]);
+    // 
+    // 未指定 original, 或者 original == null，表示同步所有字段。
+    // 为指定 destination，表示同步起点与终点字段名称相同。
+    // watch(obj) 表示同步所有字段，
+    // 此时继续调用 watch(obj, original, destination)，表示停止同步所有字段，仅同步给定字段。
+    // 如果继续调用 watch(obj, original, destination)，表示增加（或更新）同步字段。 
     watch: function(obj, original, destination) {
       if (!obj) return this;
       var map = {};
@@ -860,6 +884,7 @@
       return this;
     },
 
+    // @param obj (可选) 被观察者，如果为给定 obj，则停止观察所有被观察者。
     stopWatching: function(obj) {
       var watchings = this._watchings;
       if (!watchings) return this;
@@ -882,6 +907,7 @@
     },
 
     // @override
+    // 设置属性方法。
     set: function(key, val, options) {
       if (key == null) return this;
       var attrs;
@@ -1277,8 +1303,8 @@
   });
 
 
-  // View
-  // ------
+  // Backbone.View
+  // -----------------
   // todo: continue to work on this object.
 
   var wrapper = function(ctx, method, options) {
@@ -1335,6 +1361,84 @@
 
     children: null,
 
+
+    // 生成 node jQuery 对象映射关系
+    _generateNodes: function() {
+      var that = this;
+      var $node;
+      this._nodes = _.reduce(this.nodes, function(memo, nodePath, nodeName) {
+        $node = that.$(nodePath);
+        if ($node.length > 0) memo[nodeName] = $node;
+        return memo;
+      }, {});
+      return this;
+    },
+
+    // 用以保存 node 子视图的顺序
+    _createNodeChildren: function() {
+      var this._nodeChildren = _.reduce(this.nodes, function(memo, nodePath, nodeName) {
+        memo[nodeName] = [];
+        return memo;
+      }, {});
+      return this;
+    },
+
+    // 向 `this._nodeChildren` 推入视图
+    // @param flag 为真，表示从头部推入，否则从尾部推入。
+    _addNodeChild: function(nodeName, view, flag) {
+      var children = this._nodeChildren[nodeName];
+      if (children) {
+        if (flag) {
+          children.unshift(view);
+        } else {
+          children.push(view);
+        }
+      }
+      return this;
+    },
+
+    // 从 `this._nodeChildren` 中移除 view
+    _removeNodeChild: function(nodeName, view) {
+      var toRemove = [];
+      if (_.isEmpty(this._nodeChildren)) return toRemove;
+      var nodeChildren = this._nodeChildren[nodeName];
+      if (_.isEmpty(nodeChildren)) return toRemove;
+      if (view) {
+        var index = nodeChildren.indexOf(view);
+        if (index >= 0) {
+          nodeChildren.splice(index, 1);
+          toRemove.push(view);
+        }
+      } else {
+        toRemove = _.clone(nodeChildren);
+        nodeChildren.length = 0;
+      }
+      return toRemove; 
+    },
+
+    // detach 所有子视图
+    _detachNodeChildren: function() {
+      _.each(this._nodeChildren, function(children) {
+        _.each(children, function(child) {
+          child.$el.detach();
+        });
+      });
+      return this;
+    },
+
+    // attach 所有有效子视图
+    _attachNodeChildren: function() {
+      var nodeChildren = this._nodeChildren;
+      if (_.isEmpty(nodeChildren)) return this;
+      _.each(this._nodes, function($node, nodeName) {
+        _.each(nodeChildren[nodeName], function(children) {
+          _.each(children, function(child) {
+            $node.append(child.$el);
+          });
+        });
+      });
+    },
+
     constructor: function(options) {
       // 生成唯一标识
       this.cid = _.uniqueId('view');
@@ -1349,12 +1453,29 @@
 
       // 子节点
       this.nodes = _.extend({}, this.nodes, options.nodes);
+      this._createNodeChildren();
 
       // wrap methods
-      this.render = wrapper(this, 'render', {
-        done: this._cacheNodeElements
-      });
-      this.remove = wrapper(this, 'remove');
+      var render = this.render || _.noop;
+      this.render = function() {
+        this._detachNodeChildren();
+        this.trigger('render:before', this);
+
+        render.apply(this, arguments);
+        this.trigger('render', this);
+
+        this._generateNodes();
+        this._attachNodeChildren();
+        this.trigger('render:after', this);
+      };
+      
+      var remove = this.remove || _.noop;
+      this.remove = function() {
+        // todo: unfinished 
+        this.unmount();
+        remove.apply(this, arguments);
+      };
+      
       this.initialize.apply(this, arguments);
     },
 
@@ -1365,31 +1486,43 @@
     attach: function() {},
 
     // 停用子节点
-    deactivate: function(node, view, options) {},
+    deactivate: function(node, view) {
+      // TODO: continue
+    },
 
     // 从父视图脱离
     detach: function() {},
 
     // 返回缓存的 node jQuery 对象
     getNode: function(nodeName) {
-      return this._nodeElements && this._nodeElements[nodeName];
+      var $nodes = this._nodes;
+      if (nodeName == null) return _.clone($nodes);
+      return $nodes && $nodes[nodeName];
     },
 
+    // 返回 node 对应的路径
     getNodePath: function(nodeName) {
-      return this.nodes[nodeName];
+      return this.nodes && this.nodes[nodeName];
     },
 
-    // 是否存在给定名称 Node
+    // 是否存在给定名称 dom 节点
     hasNode: function(nodeName) {
-      return _.has(this.nodes, nodeName);
+      return _.has(this._nodes, nodeName);
     },
 
     // 挂载子视图
+    // todo:
     mount: function(node, views, options) {
       if (!path || !view) return this;
       if (!_.isArray(view)) view = [view];
     },
 
+    // @override
+    remove: function() {
+      // todo: 应保证当前处于非挂载状态
+    },
+
+    // todo
     removeNode: function(nodeName, options) {
       // todo: 移除 node 同时移除 node 下所有视图
       var nodes = this.nodes;
@@ -1420,12 +1553,13 @@
     // },
 
     // 卸载子视图
+    // todo: continue
     unmount: function(path, views, options) {}
   });
 
 
-  // MVCollection
-  // ------------
+  // Backbone.MVCollection
+  // -------------------------
 
   var setOptions = {
     add: true,
