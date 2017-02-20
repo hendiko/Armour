@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-17 18:32:39
+ * @Last Modified time: 2017-02-20 14:27:34
  *
  * 
  */
@@ -783,12 +783,107 @@
 
   // Backbone.Model
   // ===========
+  // 
+  // watcher._watchings, watchee._watchers
+  // 
+  var setMethod = Backbone.Model.prototype.set;
 
   _.extend(Backbone.Model.prototype, {
-    watch: function() {},
-    stopWatching: function() {}
-  });  
 
+    watch: function(obj, original, destination) {
+      if (!obj) return this;
+      var map = {};
+      if (original == null) {
+        map = null;
+      } else if (_.isString(original)) {
+        map[original] = _.isString(destination) ? destination : null;
+      } else if (_.isArray(original)) {
+        map = _.reduce(original, function(memo, name) {
+          if (_.isString(name)) memo[name] = null;
+          return memo;
+        }, {});
+      } else {
+        map = original;
+      }
+      
+      if (!this._watchings) this._watchings = {};
+      if (!obj._watchers) obj._watchers = {};
+      if (!this._listenId) this._listenId = _.uniqueId('l');
+      if (!obj._listenId) obj._listenId = _.uniqueId('l');
+
+      var watchings = this._watchings;
+      var watchers = obj._watchers;
+
+      var watching = watchings[obj._listenId] || (watchings[obj._listenId] = {obj: obj});
+      var watch = watching['watch'];
+      watching['watch'] = map == null ? null : _.extend({}, watch, map);
+
+      if (!watchers[this._listenId]) {
+        watchers[this._listenId] = this; 
+      }
+
+      return this;
+    },
+
+  stopWatching: function(obj) {
+    var watchings = this._watchings;
+    if (!watchings) return this;
+    var maps = obj ? [watchings[obj._listenId]] : _.values(watchings);
+
+    var watchee;
+    var thisId = this._listenId;
+    _.each(maps, function(map) {
+      if (map) {
+        watchee = map.obj;
+        if (watchee._watchers) {
+          delete watchee._watchers[thisId];
+        }
+        if (_.isEmpty(watchee._watchers)) watchee._watchers = void 0;
+        delete watchings[watchee._listenId];
+      }
+    });
+    if (_.isEmpty(watchings)) this._watchings = void 0;
+    return this;
+  },
+
+    set: function(key, val, options) {
+      if (key == null) return this;
+      var attrs;
+      if (typeof key === 'object') {
+        attrs = key;
+        options = val;
+      } else {
+        (attrs = {})[key] = val;
+      }
+
+      options || (options = {});
+
+      var attributes = _.clone(attrs);
+      var opts = _.clone(options);
+      var result = setMethod.call(this, attrs, options);
+
+      var watchings, watching;
+      var objId = this._listenId;
+      var changed = this.changedAttributes();
+      _.each(this._watchers, function(watcher) {
+        watchings = watcher._watchings;
+        if (!watchings) return;
+        watching = watchings[objId];
+        var watch = watching['watch'];
+        if (watch == null) {
+          _.defer(_.bind(watcher.set, watcher), _.clone(attributes), _.clone(opts));
+        } else {
+          var data = _.reduce(watch, function(memo, val, key) {
+            if (val == null) val = key;
+            if (_.has(changed, key)) memo[val] = changed[key];
+            return memo;
+          }, {});
+          _.defer(_.bind(watcher.set, watcher), data, _.clone(opts));
+        }
+      });
+      return result;
+    }
+});
 
   // Backbone.Controller
   // ==============
