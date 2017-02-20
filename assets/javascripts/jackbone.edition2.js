@@ -2,9 +2,10 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-20 14:27:34
+ * @Last Modified time: 2017-02-20 14:52:49
  *
- * 
+ * todo: 
+ * 1. stopForwarding 和 stopListening, stopWatching 应保持同时销毁
  */
 (function(factory) {
   // `self`(known as `window`) in browser, or `global` on the server.
@@ -106,11 +107,12 @@
   // iteratee 是迭代函数，即 onApi, offApi, triggerApi, onceMap 函数
   // eventsApi 作用是将 events, name, callback, opts 参数整理成标准格式传递给 iteratee 调用。
   var eventsApi = function(iteratee, events, name, callback, opts) {
-    var i = 0, names;
+    var i = 0,
+      names;
     if (name && typeof name === 'object') {
       // Handle event maps.
       if (callback !== void 0 && 'context' in opts && opts.context === void 0) opts.context = callback;
-      for (names = _.keys(name); i < names.length ; i++) {
+      for (names = _.keys(name); i < names.length; i++) {
         events = eventsApi(iteratee, events, names[i], name[names[i]], opts);
       }
     } else if (name && eventSplitter.test(name)) {
@@ -143,9 +145,9 @@
   var internalOn = function(obj, name, callback, context, listening) {
     // 执行 eventsApi 
     obj._events = eventsApi(onApi, obj._events || {}, name, callback, {
-        context: context,
-        ctx: obj,
-        listening: listening
+      context: context,
+      ctx: obj,
+      listening: listening
     });
 
     // 如果当前是实现 listenTo 方法，需要在被监听者的 _listeners 中，添加监听者的引用关系。
@@ -162,7 +164,7 @@
   // an event in another object... keeping track of what it's listening to
   // for easier unbinding later.
   // Events.on 操作的逆操作，表示监听另一个对象的事件，并保持对该对象的引用，以便解绑事件。
-  Events.listenTo =  function(obj, name, callback) {
+  Events.listenTo = function(obj, name, callback) {
     // 如果 obj 为否，则终止 listenTo 操作。
     if (!obj) return this;
     // 被监听对象应该有一个唯一的监听 ID，即 _listenId，用以标识被监听者身份。
@@ -183,7 +185,13 @@
       //    id: 监听者监听 ID。
       //    listeningTo: 监听映射表。
       //    count: 监听者对被监听者监听的次数
-      listening = listeningTo[id] = {obj: obj, objId: id, id: thisId, listeningTo: listeningTo, count: 0};
+      listening = listeningTo[id] = {
+        obj: obj,
+        objId: id,
+        id: thisId,
+        listeningTo: listeningTo,
+        count: 0
+      };
     }
 
     // Bind callbacks on obj, and keep track of them on listening.
@@ -199,11 +207,18 @@
       // handlers 是事件处理函数组成的数组
       var handlers = events[name] || (events[name] = []);
       // context 事件处理函数上下文（用户给出），ctx 事件触发者（默认上下文），listening 监听引用关系表
-      var context = options.context, ctx = options.ctx, listening = options.listening;
+      var context = options.context,
+        ctx = options.ctx,
+        listening = options.listening;
       // 监听计数加一。
       if (listening) listening.count++;
       // 事件处理函数集合增加一个事件处理
-      handlers.push({ callback: callback, context: context, ctx: context || ctx, listening: listening });
+      handlers.push({
+        callback: callback,
+        context: context,
+        ctx: context || ctx,
+        listening: listening
+      });
     }
     return events;
   };
@@ -213,12 +228,12 @@
   // callbacks for the event. If `name` is null, removes all bound
   // callbacks for all events.
   // 解绑事件
-  Events.off =  function(name, callback, context) {
+  Events.off = function(name, callback, context) {
     if (!this._events) return this;
     this._events = eventsApi(offApi, this._events, name, callback, {
-        context: context,
-        // 所有监听者引用表
-        listeners: this._listeners
+      context: context,
+      // 所有监听者引用表
+      listeners: this._listeners
     });
     return this;
   };
@@ -226,7 +241,7 @@
   // Tell this object to stop listening to either specific events ... or
   // to every object it's currently listening to.
   // 停止监听
-  Events.stopListening =  function(obj, name, callback) {
+  Events.stopListening = function(obj, name, callback) {
     // 被监听者引用表
     var listeningTo = this._listeningTo;
     if (!listeningTo) return this;
@@ -256,9 +271,11 @@
     // events 不存在，终止 off 操作
     if (!events) return;
 
-    var i = 0, listening;
+    var i = 0,
+      listening;
     // context 指定上下文，listeners 监听者
-    var context = options.context, listeners = options.listeners;
+    var context = options.context,
+      listeners = options.listeners;
 
     // Delete all events listeners and "drop" events.
     // 没有给定任何事件名、事件回调或上下文，则移除所有监听者，以及事件。
@@ -268,13 +285,13 @@
       // 遍历所有监听者 id，逐一接触引用关系
       for (; i < ids.length; i++) {
         listening = listeners[ids[i]];
-        delete listeners[listening.id];  // 移除监听者引用
-        delete listening.listeningTo[listening.objId];  // 移除监听关系
+        delete listeners[listening.id]; // 移除监听者引用
+        delete listening.listeningTo[listening.objId]; // 移除监听关系
       }
       // laixi: jackbone feature
       _.each(events['all'], function(handler) {
         if (handler.callback.forwarder) {
-          removeForwardMap(handler.callback.forwarder, handler.listening.objId, handler.callback.fwdId);  // 移除转发关系           
+          removeForwardMap(handler.callback.forwarder, handler.listening.objId, handler.callback.fwdId); // 移除转发关系           
         }
       });
       return;
@@ -296,14 +313,14 @@
         var handler = handlers[j];
         if (
           callback && callback !== handler.callback &&
-            callback !== handler.callback._callback ||
-              context && context !== handler.context
+          callback !== handler.callback._callback ||
+          context && context !== handler.context
         ) {
           remaining.push(handler);
         } else {
           listening = handler.listening;
           // laixi: jackbone feature
-          removeForwardMap(handler.callback.forwarder, listening.objId, handler.callback.fwdId);  // 移除转发关系
+          removeForwardMap(handler.callback.forwarder, listening.objId, handler.callback.fwdId); // 移除转发关系
           if (listening && --listening.count === 0) {
             delete listeners[listening.id];
             delete listening.listeningTo[listening.objId];
@@ -325,14 +342,14 @@
   // the callback is invoked, its listener will be removed. If multiple events
   // are passed in using the space-separated syntax, the handler will fire
   // once for each event, not once for a combination of all events.
-  Events.once =  function(name, callback, context) {
+  Events.once = function(name, callback, context) {
     // Map the event into a `{event: once}` object.
     var events = eventsApi(onceMap, {}, name, callback, _.bind(this.off, this));
     return this.on(events, void 0, context);
   };
 
   // Inversion-of-control versions of `once`.
-  Events.listenToOnce =  function(obj, name, callback) {
+  Events.listenToOnce = function(obj, name, callback) {
     // Map the event into a `{event: once}` object.
     var events = eventsApi(onceMap, {}, name, callback, _.bind(this.stopListening, this, obj));
     return this.listenTo(obj, events);
@@ -355,7 +372,7 @@
   // passed the same arguments as `trigger` is, apart from the event name
   // (unless you're listening on `"all"`, which will cause your callback to
   // receive the true name of the event as the first argument).
-  Events.trigger =  function(name) {
+  Events.trigger = function(name) {
     if (!this._events) return this;
 
     var length = Math.max(0, arguments.length - 1);
@@ -382,20 +399,34 @@
   // triggering events. Tries to keep the usual cases speedy (most internal
   // Backbone events have 3 arguments).
   var triggerEvents = function(events, args) {
-    var ev, i = -1, l = events.length, a1 = args[0], a2 = args[1], a3 = args[2];
+    var ev, i = -1,
+      l = events.length,
+      a1 = args[0],
+      a2 = args[1],
+      a3 = args[2];
     switch (args.length) {
-      case 0: while (++i < l) (ev = events[i]).callback.call(ev.ctx); return;
-      case 1: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1); return;
-      case 2: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1, a2); return;
-      case 3: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1, a2, a3); return;
-      default: while (++i < l) (ev = events[i]).callback.apply(ev.ctx, args); return;
+      case 0:
+        while (++i < l)(ev = events[i]).callback.call(ev.ctx);
+        return;
+      case 1:
+        while (++i < l)(ev = events[i]).callback.call(ev.ctx, a1);
+        return;
+      case 2:
+        while (++i < l)(ev = events[i]).callback.call(ev.ctx, a1, a2);
+        return;
+      case 3:
+        while (++i < l)(ev = events[i]).callback.call(ev.ctx, a1, a2, a3);
+        return;
+      default:
+        while (++i < l)(ev = events[i]).callback.apply(ev.ctx, args);
+        return;
     }
   };
 
 
   // Forwarding
   // ------------
-  
+
   // 事件转发作业 ID
   var forwardId = function() {
     return _.uniqueId('fwd');
@@ -422,7 +453,7 @@
     // 如果未指定 fwdId，则移除 otherId。
     if (fwdId == null) {
       delete forwardings[otherId];
-      return ;
+      return;
     }
     var maps = forwardings[otherId];
     if (!maps) return;
@@ -449,7 +480,7 @@
       callback: callback,
       other: other
     };
-    if (options.once) {  // 如果指定单次转发
+    if (options.once) { // 如果指定单次转发
       me.listenToOnce(other, 'all', function() {
         callback.apply(this, arguments);
         removeForwardMap(me, otherId, fwdId);
@@ -463,7 +494,7 @@
     if (_.isEmpty(name)) return null;
     var map = {};
     if (_.isString(name)) {
-      map[name] = null; 
+      map[name] = null;
     } else {
       map = name;
     }
@@ -486,7 +517,7 @@
       _name[name] = destination;
     } else {
       _name = name;
-    } ;
+    };
     var map = toMap(_name);
     if (!map) {
       forwardApi(this, obj, null, null);
@@ -509,15 +540,19 @@
       _name[name] = destination;
     } else {
       _name = name;
-    } ;
+    };
     var map = toMap(_name);
     if (!map) {
-      forwardApi(this, obj, null, null, {once: true});
+      forwardApi(this, obj, null, null, {
+        once: true
+      });
     } else {
       var that = this;
       _.each(map, function(destination, original) {
         _.each(original.split(eventSplitter), function(name) {
-          if (name) forwardApi(that, obj, name, destination, {once: true});
+          if (name) forwardApi(that, obj, name, destination, {
+            once: true
+          });
         });
       });
     }
@@ -540,7 +575,7 @@
       _name[name] = destination;
     } else {
       _name = name;
-    } ;
+    };
     var map = toMap(_name);
     if (map) {
       map = _.reduce(map, function(memo, destination, original) {
@@ -575,7 +610,7 @@
 
   // Aliases for backwards compatibility.
   // bind 作为 on 别名，unbind 作为 off 别名。（为向后兼容）
-  Events.bind   = Events.on;
+  Events.bind = Events.on;
   Events.unbind = Events.off;
 
   // Allow the `Backbone` object to serve as a global event bus, for folks who
@@ -786,8 +821,6 @@
   // 
   // watcher._watchings, watchee._watchers
   // 
-  var setMethod = Backbone.Model.prototype.set;
-
   _.extend(Backbone.Model.prototype, {
 
     watch: function(obj, original, destination) {
@@ -805,7 +838,7 @@
       } else {
         map = original;
       }
-      
+
       if (!this._watchings) this._watchings = {};
       if (!obj._watchers) obj._watchers = {};
       if (!this._listenId) this._listenId = _.uniqueId('l');
@@ -814,38 +847,41 @@
       var watchings = this._watchings;
       var watchers = obj._watchers;
 
-      var watching = watchings[obj._listenId] || (watchings[obj._listenId] = {obj: obj});
+      var watching = watchings[obj._listenId] || (watchings[obj._listenId] = {
+        obj: obj
+      });
       var watch = watching['watch'];
       watching['watch'] = map == null ? null : _.extend({}, watch, map);
 
       if (!watchers[this._listenId]) {
-        watchers[this._listenId] = this; 
+        watchers[this._listenId] = this;
       }
 
       return this;
     },
 
-  stopWatching: function(obj) {
-    var watchings = this._watchings;
-    if (!watchings) return this;
-    var maps = obj ? [watchings[obj._listenId]] : _.values(watchings);
+    stopWatching: function(obj) {
+      var watchings = this._watchings;
+      if (!watchings) return this;
+      var maps = obj ? [watchings[obj._listenId]] : _.values(watchings);
 
-    var watchee;
-    var thisId = this._listenId;
-    _.each(maps, function(map) {
-      if (map) {
-        watchee = map.obj;
-        if (watchee._watchers) {
-          delete watchee._watchers[thisId];
+      var watchee;
+      var thisId = this._listenId;
+      _.each(maps, function(map) {
+        if (map) {
+          watchee = map.obj;
+          if (watchee._watchers) {
+            delete watchee._watchers[thisId];
+          }
+          if (_.isEmpty(watchee._watchers)) watchee._watchers = void 0;
+          delete watchings[watchee._listenId];
         }
-        if (_.isEmpty(watchee._watchers)) watchee._watchers = void 0;
-        delete watchings[watchee._listenId];
-      }
-    });
-    if (_.isEmpty(watchings)) this._watchings = void 0;
-    return this;
-  },
+      });
+      if (_.isEmpty(watchings)) this._watchings = void 0;
+      return this;
+    },
 
+    // @override
     set: function(key, val, options) {
       if (key == null) return this;
       var attrs;
@@ -855,35 +891,101 @@
       } else {
         (attrs = {})[key] = val;
       }
-
       options || (options = {});
 
       var attributes = _.clone(attrs);
       var opts = _.clone(options);
-      var result = setMethod.call(this, attrs, options);
 
+
+      if (!this._validate(attrs, options)) return false;
+      var unset = options.unset;
+      var silent = options.silent; // 如果为 true，不触发任何 `change` 事件。
+      var changes = []; // 发生变化属性名称列表
+
+      var changing = this._changing;
+      this._changing = true;
+
+      if (!changing) {
+        this._previousAttributes = _.clone(this.attributes); // 保存操作前的属性哈希副本
+        this.changed = {}; // （初始）设置变化属性哈希
+      }
+
+      var current = this.attributes; // 当前属性哈希
+      var changed = this.changed; // 当前变化属性哈希
+      var prev = this._previousAttributes; // 操作前属性哈希
+
+      // 遍历输入哈希，更新或删除哈希值
+      for (var attr in attrs) {
+        val = attrs[attr];
+        // 当前属性值不等于输入属性值时，在变化属性名列表中记录属性名称
+        if (!_.isEqual(current[attr], val)) changes.push(attr);
+
+        // 操作前属性值不等于输入属性值时，记录变化属性值，否则移除变化属性名。
+        // （因为 set 可以内嵌，this.changed 保存所有内嵌 set 操作结束后的属性变化状态）
+        if (!_.isEqual(prev[attr], val)) {
+          changed[attr] = val;
+        } else {
+          delete changed[attr];
+        }
+
+        // 如果 options.unset 为真，则从当前属性哈希中移除属性，否则更新当前属性哈希。
+        unset ? delete current[attr] : current[attr] = val;
+      }
+
+      // 更新模型 id，因为 set 可能会更改 idAttribute 指定的主键值。
+      this.id = this.get(this.idAttribute);
+
+      // Trigger all relevant attribute changes.
+      // 如果 set 不是静默操作，则需要通知第三方自身属性的变化。
+      if (!silent) {
+        if (changes.length) this._pending = options;
+        for (var i = 0; i < changes.length; i++) {
+          this.trigger('change:' + changes[i], this, current[changes[i]], options);
+        }
+      }
+
+      // You might be wondering why there's a `while` loop here. Changes can
+      // be recursively nested within `"change"` events.
+      // 
+      // changing 为真，表示本次 set 为递归操作，主动 set 操作尚未结束，立即返回。
+      if (changing) return this;
+
+      // 同步设置 watcher 数据
       var watchings, watching;
       var objId = this._listenId;
-      var changed = this.changedAttributes();
       _.each(this._watchers, function(watcher) {
         watchings = watcher._watchings;
         if (!watchings) return;
         watching = watchings[objId];
         var watch = watching['watch'];
         if (watch == null) {
-          _.defer(_.bind(watcher.set, watcher), _.clone(attributes), _.clone(opts));
+          watcher.set(_.clone(attributes), _.clone(opts));
         } else {
           var data = _.reduce(watch, function(memo, val, key) {
             if (val == null) val = key;
             if (_.has(changed, key)) memo[val] = changed[key];
             return memo;
           }, {});
-          _.defer(_.bind(watcher.set, watcher), data, _.clone(opts));
+          watcher.set(data, _.clone(opts));
         }
       });
-      return result;
+
+      // 本行以下代码只有在主动 set 操作中才会执行。
+      // 如果非静默 set，则需要触发 `change` 事件。
+      if (!silent) {
+        // 当 this._pending 为真时，表示有属性变化，需要触发 `change` 事件。
+        // 并且 this._pending 值就是输入参数 options。
+        while (this._pending) {
+          options = this._pending;
+          this._pending = false;
+          this.trigger('change', this, options);
+        }
+      }
+      this._pending = false; // 重置为 false 表示属性没有变化了。
+      this._changing = false; // 设置为 false 表示主动 set 操作结束。
+      return this;
     }
-});
+  });
 
   // Backbone.Controller
   // ==============
