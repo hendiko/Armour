@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-20 18:33:44
+ * @Last Modified time: 2017-02-21 16:13:12
  *
  * todo: 
  * 1. stopForwarding 和 stopListening, stopWatching 应保持同时销毁
@@ -66,6 +66,14 @@
       return str.replace(regexp, '');
     };
   }(/^\s*|\s*$/g);
+
+  var wrapError = function(model, options) {
+    var error = options.error;
+    options.error = function(resp) {
+      if (error) error.call(options.context, model, resp, options);
+      model.trigger('error', model, resp, options);
+    };
+  };
 
   // Backbone.Events - 事件
   // -------------------------
@@ -832,6 +840,47 @@
   // 
   _.extend(Backbone.Model.prototype, {
 
+    // @override
+    destroy: function(options) {
+      options = options ? _.clone(options) : {};
+      var model = this;
+      var success = options.success;
+      var wait = options.wait;
+
+      // 销毁模型（停止监听事件，触发 destroy 事件）
+      // 停止转发、观察与监听。
+      var destroy = function() {
+        model.stopForwarding();
+        model.stopWatching();
+        model.stopListening();
+        model.trigger('destroy', model, model.collection, options);
+      };
+
+      // 封装 success 回调
+      // 该回调会在请求成功后立即执行，请求成功即被视为操作成功。
+      options.success = function(resp) {
+        if (wait) destroy();
+        if (success) success.call(options.context, model, resp, options);
+        // 如果 model.isNew() 为假，才有可能会触发 sync 事件。
+        if (!model.isNew()) model.trigger('sync', model, resp, options);
+      };
+
+      var xhr = false;
+      // 如果模型数据不存在于远端（按照 Backbone 设计理论），
+      // 则无需与远端进行数据同步操作，直接执行 success 回调。（理论上也不触发 sync 事件）
+      if (this.isNew()) {
+        _.defer(options.success);
+      } else {
+        // 封装异常回调
+        wrapError(this, options);
+        // 与远端同步
+        xhr = this.sync('delete', this, options);
+      }
+      // 如果不等待，则立即销毁模型。
+      if (!wait) destroy();
+      return xhr;
+    },
+
     // @param obj 被观察者。
     // @param original 同步起始字段
     // @param destination 同步终点字段
@@ -1192,6 +1241,7 @@
     },
 
     destroy: function() {
+      this.stopForwarding();
       this.stopListening();
       this.detach();
       this.clear();
@@ -1305,258 +1355,214 @@
 
   // Backbone.View
   // -----------------
-  // todo: continue to work on this object.
 
-  var wrapper = function(ctx, method, options) {
-    var fn = ctx[method] || _.noop;
-    options || (options = {});
-    var before = options.before;
-    var done = options.done;
-    var after = options.after;
-    return function() {
-      var args = _.toArray(arguments);
+  var _viewOptions = ['controller', 'model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events', 'render'];
 
-      if (before) before.apply(this, args);
-      ctx.trigger.apply(this, [method + ':before', ctx].concat(args));
-
-      var result = fn.apply(ctx, args);
-
-      if (done) done.apply(this, args);
-      ctx.trigger.apply(this, [method, ctx].concat(args));
-
-      if (after) after.apply(this, args);
-      ctx.trigger.apply(this, [method + ':after', ctx].concat(args));
-      return result;
-    };
+  // 卸载节点视图
+  var unmountNode = function(map) {
+    var node = map.node;
+    var view = map.view;
+    var stack = _.property(node)(this._nodeStacks);
+    if (stack) {
+      var position = stack.indexOf(view.cid);
+      if (position >= 0) stack.splice(position, 1);
+    }
+    if (this._childNodes) {
+      delete this._childNodes[view.cid];
+    }
+    view.$el.detach();
+    view.parent = null;
+    this.trigger('unmount', view, node);
+    return view;
   };
 
-  var viewOptions = ['controller', 'model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events'];
+  var mountNode = function(node, view, flag) {
+    var childNodes = this._childNodes || (this._childNodes = {});
+    childNodes[view.cid] = {
+      node: node,
+      view: view
+    };
+    var stack = this._nodeStacks[node];
+    if (flag) {
+      this.$el.prepend(view.$el);
+      stack.unshift(view.cid);
+    } else {
+      this.$el.append(view.$el);
+      stack.push(view.cid);
+    }
+    view.parent = this;
+    this.trigger('mount', view, node);
+    return view;
+  };
 
+  // this._$nodes 保存 $node 引用
+  // this._nodeStacks  保存 node 对应的视图集合
+  // this._childNodes 保存子视图引用
   var View = Backbone.View = Backbone.View.extend({
 
-    _nodeRefs: null,
-
-    _nodeViews: null,
-
-    _nodeElements: null,
-
-    _viewRefs: null,
-
-    // 缓存节点 jQuery 对象
-    _cacheNodeElements: function() {
-      var nodes = this.nodes;
+    // 每次渲染视图后，重新生成 $nodes
+    _initNodes: function() {
+      var $node;
       var that = this;
-      var cache = this._nodeElements || (this._nodeElements = {});
-      var $selector;
-      _.each(nodes, function(selector, node) {
-        $selector = that.$(selector);
-        if ($selector.length) cache[node] = $selector;
+      var $nodes = _.reduce(this.nodes, function(memo, path, name) {
+        $node = that.$(path);
+        if ($node.length) memo[name] = $node;
+        return memo;
+      }, {});
+      $nodes['root'] = this.$el;
+      this._$nodes = $nodes;
+      return this;
+    },
+
+    _initNodeStacks: function() {
+      var stacks = _.reduce(this.nodes, function(memo, path, node) {
+        memo[node] = [];
+        return memo;
+      }, {});
+      stacks['root'] = [];
+      this._nodeStacks = stacks;
+      return this;
+    },
+
+    _detachNodeStacks: function() {
+      var nodes = this._childNodes;
+      if (_.isEmpty(nodes)) return this;
+      var map;
+      _.each(this._nodeStacks, function(stack) {
+        _.each(stack, function(cid) {
+          map = nodes[cid];
+          if (map) {
+            map.view.$el.detach();
+          }
+        });
       });
       return this;
     },
 
-    nodes: null,
+    _attachNodeStacks: function() {
+      var nodes = this._childNodes;
+      if (_.isEmpty(nodes)) return this;
+      var map, $node;
+      var that = this;
+      _.each(this._nodeStacks, function(stack) {
+        _.each(stack, function(cid) {
+          map = nodes[cid];
+          if (map) {
+            $node = that.$node(map.node);
+            if ($node) {
+              $node.append(map.view.$el);
+            }
+          }
+        });
+      });
+      return this;
+    },
 
     parent: null,
 
-    children: null,
-
-
-    // 生成 node jQuery 对象映射关系
-    _generateNodes: function() {
-      var that = this;
-      var $node;
-      this._nodes = _.reduce(this.nodes, function(memo, nodePath, nodeName) {
-        $node = that.$(nodePath);
-        if ($node.length > 0) memo[nodeName] = $node;
-        return memo;
-      }, {});
-      return this;
-    },
-
-    // 用以保存 node 子视图的顺序
-    _createNodeChildren: function() {
-      var this._nodeChildren = _.reduce(this.nodes, function(memo, nodePath, nodeName) {
-        memo[nodeName] = [];
-        return memo;
-      }, {});
-      return this;
-    },
-
-    // 向 `this._nodeChildren` 推入视图
-    // @param flag 为真，表示从头部推入，否则从尾部推入。
-    _addNodeChild: function(nodeName, view, flag) {
-      var children = this._nodeChildren[nodeName];
-      if (children) {
-        if (flag) {
-          children.unshift(view);
-        } else {
-          children.push(view);
-        }
-      }
-      return this;
-    },
-
-    // 从 `this._nodeChildren` 中移除 view
-    _removeNodeChild: function(nodeName, view) {
-      var toRemove = [];
-      if (_.isEmpty(this._nodeChildren)) return toRemove;
-      var nodeChildren = this._nodeChildren[nodeName];
-      if (_.isEmpty(nodeChildren)) return toRemove;
-      if (view) {
-        var index = nodeChildren.indexOf(view);
-        if (index >= 0) {
-          nodeChildren.splice(index, 1);
-          toRemove.push(view);
-        }
-      } else {
-        toRemove = _.clone(nodeChildren);
-        nodeChildren.length = 0;
-      }
-      return toRemove; 
-    },
-
-    // detach 所有子视图
-    _detachNodeChildren: function() {
-      _.each(this._nodeChildren, function(children) {
-        _.each(children, function(child) {
-          child.$el.detach();
-        });
-      });
-      return this;
-    },
-
-    // attach 所有有效子视图
-    _attachNodeChildren: function() {
-      var nodeChildren = this._nodeChildren;
-      if (_.isEmpty(nodeChildren)) return this;
-      _.each(this._nodes, function($node, nodeName) {
-        _.each(nodeChildren[nodeName], function(children) {
-          _.each(children, function(child) {
-            $node.append(child.$el);
-          });
-        });
-      });
-    },
-
     constructor: function(options) {
-      // 生成唯一标识
       this.cid = _.uniqueId('view');
-
       options || (options = {});
-      // 绑定实例属性
-      _.extend(this, _.pick(options, viewOptions));
-      // 创建根节点
+      _.extend(this, _.pick(options, _viewOptions));
       this._ensureElement();
-
-      this._nodeRefs = {};
-
-      // 子节点
       this.nodes = _.extend({}, this.nodes, options.nodes);
-      this._createNodeChildren();
+      this._initNodeStacks();
 
-      // wrap methods
       var render = this.render || _.noop;
       this.render = function() {
-        this._detachNodeChildren();
+        this._detachNodeStacks();
         this.trigger('render:before', this);
 
-        render.apply(this, arguments);
+        var result = render.apply(this, arguments);
         this.trigger('render', this);
 
-        this._generateNodes();
-        this._attachNodeChildren();
+        this._initNodes();
+        this._attachNodeStacks();
         this.trigger('render:after', this);
+
+        return result;
       };
-      
-      var remove = this.remove || _.noop;
-      this.remove = function() {
-        // todo: unfinished 
-        this.unmount();
-        remove.apply(this, arguments);
-      };
-      
+
       this.initialize.apply(this, arguments);
     },
 
-    // 激活子节点
-    activate: function(node, view, options) {},
+    mount: function(view, node, options) {
+      if (!view) return false;
+      if (isRefCycle(this, view)) throw Error('Reference Cycle Error');
+      if (node == null) node = 'root';
+      if (!this.hasNode(node)) return false;
 
-    // 绑定到父视图
-    attach: function() {},
-
-    // 停用子节点
-    deactivate: function(node, view) {
-      // TODO: continue
+      options || (options = {});
+      view.detach(); // 确保 view 是自由的视图
+      if (options.reset) {
+        this.unmount(node);
+      }
+      mountNode.call(this, node, view, !!options.prepend);
+      return this;
     },
 
-    // 从父视图脱离
-    detach: function() {},
-
-    // 返回缓存的 node jQuery 对象
-    getNode: function(nodeName) {
-      var $nodes = this._nodes;
-      if (nodeName == null) return _.clone($nodes);
-      return $nodes && $nodes[nodeName];
+    // 移除视图
+    unmount: function(node) {
+      var childNodes = this._childNodes;
+      if (!childNodes) return this;
+      var that = this;
+      var map;
+      if (!node) {
+        _.each(_.values(childNodes), _.bind(unmountNode, this));
+      } else if (_.isString(node)) {
+        var stack = _.clone(_.property(node)(this._nodeStacks));
+        _.each(stack, function(cid) {
+          map = childNodes[cid];
+          if (map) unmountNode.call(that, map);
+        });
+      } else {
+        map = childNodes[node.cid];
+        if (map) unmountNode.call(that, map);
+      }
+      return this;
     },
 
-    // 返回 node 对应的路径
-    getNodePath: function(nodeName) {
-      return this.nodes && this.nodes[nodeName];
+    // 绑定到其他视图
+    attach: function(parent, node, options) {
+      if (parent) {
+        return parent.mount(this, node, options) || this;
+      }
+      return this;
     },
 
-    // 是否存在给定名称 dom 节点
-    hasNode: function(nodeName) {
-      return _.has(this._nodes, nodeName);
+    // 脱离其他视图
+    detach: function() {
+      if (this.parent) {
+        this.parent.unmount(this);
+      }
+      return this;
     },
 
-    // 挂载子视图
-    // todo:
-    mount: function(node, views, options) {
-      if (!path || !view) return this;
-      if (!_.isArray(view)) view = [view];
+    // 是否定义了 node 节点（名称为 name）
+    hasNode: function(name) {
+      return name === 'root' || _.has(this.nodes, name);
+    },
+
+    // 获取 $node 对象
+    $node: function(name) {
+      return this._$nodes && this._$nodes[name];
+    },
+
+    // 获取 node 的选择路径
+    getNodePath: function(name) {
+      return this.nodes && this.nodes[name];
     },
 
     // @override
     remove: function() {
-      // todo: 应保证当前处于非挂载状态
-    },
-
-    // todo
-    removeNode: function(nodeName, options) {
-      // todo: 移除 node 同时移除 node 下所有视图
-      var nodes = this.nodes;
-      var names = nodeName ? [nodeName] : _.keys(nodes);
-      _.each(names, function(name) {
-        delete nodes[name];
-      });
+      this._removeElement();
+      this.stopForwarding();
+      this.stopListening();
+      this.unmount();
+      this.detach();
       return this;
-    },
-
-    // setNode: function(nodeName, nodePath, options) {
-    //   // todo: 新设置的节点只能在下次渲染后生效
-    //   // todo: 更改 nodePath 时，是否需要重新挂载该 node 下的视图？
-    //   var attrs;
-    //   if (typeof nodeName === 'object') {
-    //     attrs = nodeName;
-    //     options = nodePath;
-    //   } else {
-    //     (attrs = {})[nodeName] = nodePath;
-    //   }
-    //   var nodes = this.nodes || (this.nodes = {});
-    //   _.each(attrs, function(val, key) {
-    //     if (key && val) {
-    //       nodes[key] = val;
-    //     }
-    //   });
-    //   return this;
-    // },
-
-    // 卸载子视图
-    // todo: continue
-    unmount: function(path, views, options) {}
+    }
   });
-
 
   // Backbone.MVCollection
   // -------------------------
