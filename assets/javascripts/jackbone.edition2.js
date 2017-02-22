@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-09 13:49:11
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-21 16:13:12
+ * @Last Modified time: 2017-02-22 11:16:41
  *
  * todo: 
  * 1. stopForwarding 和 stopListening, stopWatching 应保持同时销毁
@@ -328,7 +328,9 @@
         } else {
           listening = handler.listening;
           // laixi: jackbone feature
-          removeForwardMap(handler.callback.forwarder, listening.objId, handler.callback.fwdId); // 移除转发关系
+          if (handler.callback.forwarder && listening) {
+            removeForwardMap(handler.callback.forwarder, listening.objId, handler.callback.fwdId); // 移除转发关系            
+          }
           if (listening && --listening.count === 0) {
             delete listeners[listening.id];
             delete listening.listeningTo[listening.objId];
