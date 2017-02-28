@@ -1,5 +1,5 @@
 module.exports = {
-  entry: './assets/main.js',
+  entry: './assets/src/main.js',
   output: {
     filename: 'jackbone.js',
     path: './build',
