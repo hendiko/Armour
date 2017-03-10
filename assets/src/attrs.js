@@ -2,7 +2,9 @@
  * @Author: laixi
  * @Date:   2017-02-28 15:28:03
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-28 15:43:18
+ * @Last Modified time: 2017-02-28 16:21:22
+ *
+ * Attributes
  */
 var _ = require('underscore');
 var utils = require('./utils');
@@ -11,9 +13,6 @@ var Events = require('./events');
 var slice = utils.slice;
 var delegate = utils.delegate;
 var isTriggerable = utils.isTriggerable;
-
-// Attributes
-// ==============
 
 var Attributes = module.exports = _.extend({
 

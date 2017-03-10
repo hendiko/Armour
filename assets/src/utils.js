@@ -2,7 +2,9 @@
  * @Author: laixi
  * @Date:   2017-02-28 14:45:59
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-28 15:42:21
+ * @Last Modified time: 2017-02-28 17:24:54
+ *
+ * utils
  */
 var _ = require('underscore');
 
@@ -41,8 +43,10 @@ exports.wrapError = function(model, options) {
 };
 
 // 检查 App 挂载是否会导致循环引用
-exports.isRefCycle = function(parent, child) {
+var isRefCycle = function(parent, child) {
   if (!parent) return false;
   if (child === parent) return true;
   return isRefCycle(parent.parent, child);
 };
+
+exports.isRefCycle = isRefCycle;
