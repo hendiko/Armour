@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "node ./bin/www",
-    "build": "webpack"
+    "build": "webpack",
+    "test": "jasmine"
   },
   "dependencies": {
     "backbone": "^1.3.3",
