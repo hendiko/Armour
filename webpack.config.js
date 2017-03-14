@@ -1,10 +1,20 @@
 module.exports = {
-  entry: './assets/src/main.js',
+  entry: {
+    v010: './assets/src/main.js',
+    v020: './assets/v020/main.js'
+  },
   output: {
-    filename: 'jackbone.js',
+    filename: 'jackbone.[name].js',
     path: './build',
     library: 'Jackbone',
     libraryTarget: 'umd'
+  },
+  module: {
+    rules: [{
+      test: /\.js$/,
+      use: 'babel-loader',
+      query: { presets: ['es2015', 'stage-0'] }
+    }]
   },
   externals: {
     'jquery': {
@@ -18,6 +28,6 @@ module.exports = {
       commonjs: 'underscore',
       commonjs2: 'underscore',
       amd: 'underscore'
-    } 
+    }
   }
 };
