@@ -10,9 +10,13 @@ module.exports = {
     libraryTarget: 'umd'
   },
   module: {
-    rules: [{
+    loaders: [{
       test: /\.js$/,
-      use: 'babel-loader?presets[]=es2015&compact=false'
+      exclude: /node_modules/,
+      loader: 'babel',
+      query: {
+        presets: ['es2015'],
+      }
     }]
   },
   externals: {
