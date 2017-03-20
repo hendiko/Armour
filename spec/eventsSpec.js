@@ -2,9 +2,9 @@
  * @Author: laixi
  * @Date:   2017-03-10 17:18:58
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-13 18:28:38
+ * @Last Modified time: 2017-03-14 15:21:33
  */
-var Jackbone = require('../build/jackbone');
+var Jackbone = require('../build/jackbone-0.2.0');
 var _ = require('underscore');
 
 describe('Jackbone Events Testing.', () => {

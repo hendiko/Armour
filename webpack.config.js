@@ -1,10 +1,10 @@
 module.exports = {
   entry: {
-    v010: './assets/src/main.js',
-    v020: './assets/v020/main.js'
+    '0.2.0': './assets/src/main.js',
+    '0.3.0': './assets/v030/main.js'
   },
   output: {
-    filename: 'jackbone.[name].js',
+    filename: 'jackbone-[name].js',
     path: './build',
     library: 'Jackbone',
     libraryTarget: 'umd'
@@ -12,8 +12,7 @@ module.exports = {
   module: {
     rules: [{
       test: /\.js$/,
-      use: 'babel-loader',
-      query: { presets: ['es2015', 'stage-0'] }
+      use: 'babel-loader?presets[]=es2015&compact=false'
     }]
   },
   externals: {
