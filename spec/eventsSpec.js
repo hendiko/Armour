@@ -2,9 +2,9 @@
  * @Author: laixi
  * @Date:   2017-03-10 17:18:58
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-21 18:47:21
+ * @Last Modified time: 2017-03-21 23:32:30
  */
-var Jackbone = require('../build/jackbone-0.3.0').default;
+var Jackbone = require('../build/jackbone-0.3.0');
 var _ = require('underscore');
 
 describe('Jackbone Events Testing.', () => {
@@ -75,7 +75,7 @@ describe('Jackbone Events Testing.', () => {
     expect(count).toEqual(0);
   });
 
-  // Bug: 
+  // Bug:
   // 如果 foo.forward 显式给定了一个与原事件相同的转发事件名，
   // 则 stopForwarding 方法中也必须显式给定与原事件相同的转发事件名。
   // 期望的是在 stopForwarding 方法中无需显式指定转发事件名。

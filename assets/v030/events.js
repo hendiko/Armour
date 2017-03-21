@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-20 16:04:59
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-21 18:10:31
+ * @Last Modified time: 2017-03-21 23:31:39
  */
 import _ from 'underscore';
 import Backbone, { slice, trim } from './core';
@@ -42,7 +42,7 @@ var onApi = function(events, name, callback, options) {
     handlers.push({
       callback: callback,
       context: context,
-      ctx: context || ctx, // 上下文优先采用 options.context 
+      ctx: context || ctx, // 上下文优先采用 options.context
       listening: listening
     });
   }
@@ -137,7 +137,7 @@ var offApi = function(events, name, callback, options) {
         //  解除监听关系的同时，检查该监听关系是否是转发关系。
         //  如果是，解除转发关系。
         if (handler.callback.forwarder) {
-          removeForwardMap(handler.callback.forwarder, handler.callback.objId, handler.callback.fwdId); // 移除转发关系            
+          removeForwardMap(handler.callback.forwarder, handler.callback.objId, handler.callback.fwdId); // 移除转发关系
         }
         listening = handler.listening;
         if (listening && --listening.count === 0) {
@@ -365,8 +365,9 @@ Events.forward = function(obj, original, destination) {
   if (map === void 0) {
     forwardApi(this, obj, null, null);
   } else {
+    var that = this;
     _.each(map, function(dest, origin) {
-      forwardApi(this, obj, origin, dest);
+      forwardApi(that, obj, origin, dest);
     });
   }
   return this;
@@ -383,8 +384,9 @@ Events.forwardOnce = function(obj, original, destination) {
   if (map === void 0) {
     forwardApi(this, obj, null, null, { once: true });
   } else {
+    var that = this;
     _.each(map, function(dest, origin) {
-      forwardApi(this, obj, origin, dest, { once: true });
+      forwardApi(that, obj, origin, dest, { once: true });
     });
   }
   return this;
