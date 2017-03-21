@@ -1,3 +1,7 @@
+# 2017-03-21 v0.3.0 developing
+
+1. 修复被监听者调用 off() 方法不能清除 forwardOnce 生成的绑定关系。 
+
 # 2017-03-14 v0.1.0 released
 
 1. 以 CommonJS 编写 Jackbone 源码。
