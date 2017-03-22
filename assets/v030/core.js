@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-14 11:36:31
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-20 16:07:42
+ * @Last Modified time: 2017-03-22 09:50:55
  */
 import Backbone from 'backbone';
 import _ from 'underscore';
@@ -36,5 +36,7 @@ export function isRefCycle(parent, child) {
   if (child === parent) return true;
   return isRefCycle(parent.parent, child);
 }
+
+export var extend = Backbone.Model.extend;
 
 export default Backbone;

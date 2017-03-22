@@ -2,9 +2,9 @@
  * @Author: laixi
  * @Date:   2017-03-14 15:14:45
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-14 15:42:29
+ * @Last Modified time: 2017-03-22 18:08:49
  */
-var Jackbone = require('../build/jackbone-0.2.0');
+var Jackbone = require('../build/jackbone-0.3.0');
 var _ = require('underscore');
 
 describe('Jackbone.Model#watch.', function() {

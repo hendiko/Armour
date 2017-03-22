@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-02-28 15:38:54
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-28 16:20:54
+ * @Last Modified time: 2017-03-22 11:04:38
  *
  * Backbone.View
  */
@@ -38,7 +38,7 @@ var mountNode = function(node, view, flag) {
     view: view
   };
   var stack = this._nodeStacks[node];
-  if (flag) {
+  if (flag) { // laixi: why using this.$el as parent? Is it a bug?
     this.$el.prepend(view.$el);
     stack.unshift(view.cid);
   } else {
