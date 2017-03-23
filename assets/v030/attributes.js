@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 00:06:49
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-22 15:04:10
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-23 23:47:49
  */
 import _ from 'underscore';
 import { slice, isTriggerable } from './core';
@@ -13,7 +13,7 @@ var Attributes = _.extend({
 
   // 静态属性
   // 当设置静态属性时，它会同时被绑定到宿主。
-  _staticAttributes: ['collection', 'controller', 'model', 'view'],
+  _staticAttributes: null,
 
   _attributeAlias: 'attribute',
 
@@ -40,7 +40,7 @@ var Attributes = _.extend({
   // 检查 attributes 是否发生变化（diff 为假），或是否会发生变化（diff 为真）
   changedAttributes: function(diff) {
     if (!diff) return this.hasChanged() ? _.clone(this.changed) : false;
-    var old = this._changing ? this._previousAttributes : (this.attributes || (this.attributes = {}));
+    var old = this._changing ? this._previousAttributes : (this._attributes || (this._attributes = {}));
     var changed = {};
     for (var attr in diff) {
       var val = diff[attr];
@@ -53,7 +53,7 @@ var Attributes = _.extend({
   // 清空 attributes
   clear: function(options) {
     var attrs = {};
-    for (var key in this.attributes) attrs[key] = void 0;
+    for (var key in this._attributes) attrs[key] = void 0;
     return this.set(attrs, _.extend({}, options, {
       unset: true
     }));
@@ -61,7 +61,7 @@ var Attributes = _.extend({
 
   // 克隆
   clone: function() {
-    return new this.constructor(this.attributes);
+    return new this.constructor(this._attributes);
   },
 
   // 销毁
@@ -77,7 +77,7 @@ var Attributes = _.extend({
 
   // 读取 attribute
   get: function(attr) {
-    return this.attributes && this.attributes[attr];
+    return this._attributes && this._attributes[attr];
   },
 
   // 判断是否有用某个 attribute
@@ -113,7 +113,7 @@ var Attributes = _.extend({
     }
 
     options || (options = {});
-    this.attributes || (this.attributes = {});
+    this._attributes || (this._attributes = {});
 
     var unset = options.unset;
     var silent = options.silent;
@@ -123,11 +123,11 @@ var Attributes = _.extend({
     this._changing = true;
 
     if (!changing) {
-      this._previousAttributes = _.clone(this.attributes);
+      this._previousAttributes = _.clone(this._attributes);
       this.changed = {};
     }
 
-    var current = this.attributes;
+    var current = this._attributes;
     var changed = this.changed;
     var prev = this._previousAttributes;
 
@@ -174,7 +174,7 @@ var Attributes = _.extend({
 
   // 获取 attributes 副本
   toJSON: function(options) {
-    return _.clone(this.attributes);
+    return _.clone(this._attributes);
   },
 
   // 移除 attribute

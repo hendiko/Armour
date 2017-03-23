@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:26:45
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-22 15:08:24
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-23 23:54:38
  */
 import Attributes from './attributes';
 import { extend, delegate, slice } from './core';
@@ -10,7 +10,7 @@ import _ from 'underscore';
 
 var Controller = function(attributes, options) {
   this.cid = _.uniqueId(this.cidPrefix);
-  this.attributes = {};
+  this._attributes = {};
   this.set(_.defaults({}, attributes, _.result(this, 'defaults')), options);
   this.changed = {}; // reset this.changed to an empty object
   this.initialize.apply(this, arguments);
