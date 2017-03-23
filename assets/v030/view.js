@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-22 14:52:55
+ * @Last Modified time: 2017-03-23 10:14:00
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -20,16 +20,20 @@ var mountApi = function(parent, child, nodeName, options) {
     view: child
   };
   var $node = parent.$node(nodeName);
-  if (options.prepend) {
-    stack.unshift(child);
-    if ($node) $node.prepend(child.$el);
+  var index = options.index * 1;
+  if (!_.isNaN(index) && stack.length > 0 && index < stack.length) {
+    if (index <= (-1 * stack.length)) index = 0;
+    if (index < 0) index = stack.length + index;
+    var anotherChild = stack[index];
+    stack.splice(index, 0, child);
+    if ($node) anotherChild.$el.before(child.$el);
   } else {
     stack.push(child);
     if ($node) $node.append(child.$el);
   }
   child.parent = parent;
   parent.trigger('mount', child, nodeName);
-  child.trigger('mountOn', parent, nodeName);
+  child.trigger('attach', parent, nodeName);
   return child;
 };
 
@@ -152,12 +156,12 @@ var View = Backbone.View.extend({
     if (options.reset) {
       this.unmount(nodeName);
     }
-    child.free();  // 确保 child 是自由的
+    child.free(); // 确保 child 是自由的
     return mountApi(this, child, nodeName, options) && this;
   },
 
   // 将自己挂载到父视图
-  mountOn: function(parent, nodeName, options) {
+  attach: function(parent, nodeName, options) {
     if (!parent) return false;
     return parent.mount(this, nodeName, options) && this;
   },
@@ -208,18 +212,57 @@ var View = Backbone.View.extend({
     return this.nodes && this.nodes[name];
   },
 
+  // 获取 node 堆栈副本
+  getStack: function(nodeName) {
+    return nodeName == void 0 ? _.clone(this._nodeStacks) : _.clone(this._nodeStacks[nodeName]);
+  },
+
+  // 获取子视图在堆栈中的位置
+  // 如果不传任何参数，则返回当前视图在其父视图（如果有的话）堆栈中的位置。
+  getStackIndex: function(child) {
+    if (child) {
+      if (child.parent === this) {
+        var map = this._nodeChildren[child.cid];
+        var stack = this.getStack(map.node);
+        return stack.indexOf(child);
+      }
+    } else if (this.parent) {
+      return this.parent.getStackIndex(this);
+    }
+  },
+
+  // 根据堆栈索引获取子视图
+  getChildByIndex: function(nodeName, index) {
+    if (index == null) index = 0;
+    if (nodeName && !_.isNaN(index *= 1)) {
+      var stack = this.getStack(nodeName);
+      if (stack && stack.length > 0) {
+        if (index >= stack.length) {
+          index = stack.length - 1;
+        } else if (index < 0 ) {
+          if (index <= (-1 * stack.length)) {
+            index = 0;
+          } else {
+            index += stack.length;
+          }
+        }
+        return stack[index];
+      }
+    }
+  },
+
   // @override
   remove: function() {
-    this.free();  // 释放自己
+    this.free(); // 释放自己
     this._removeElement();
-    this.stopForwarding();  // 停止转发
-    this.stopListening();  // 停止监听
-    this.unmount();  // 卸载子视图
+    this.stopForwarding(); // 停止转发
+    this.stopListening(); // 停止监听
+    this.unmount(); // 卸载子视图
     return this;
   }
 });
 
-_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo'], function(method) {
+_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo', 'hide', 'show'], function(method) {
   View.prototype[method] = function() {
     return this.$el[method].apply(this.$el, arguments);
   }
