@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-23 10:14:00
+ * @Last Modified time: 2017-03-24 14:55:58
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -118,9 +118,12 @@ var View = Backbone.View.extend({
 
   // 渲染视图前，暂时脱离所有子视图
   _detachStacks: function() {
-    _.each(this._nodeStacks, function(stack) {
+    var that = this;
+    _.each(this._nodeStacks, function(stack, nodeName) {
       _.each(stack, function(child) {
         child.$el.detach();
+        that.trigger('stack:detach', child, nodeName);
+        child.trigger('detached', that, nodeName);
       });
     });
   },
@@ -137,6 +140,8 @@ var View = Backbone.View.extend({
         $node = that.$node(map.node);
         if ($node) {
           $node.append(child.$el);
+          that.trigger('stack:attach', child, map.node);
+          child.trigger('attached', that, map.node);
         }
       });
     });
@@ -239,7 +244,7 @@ var View = Backbone.View.extend({
       if (stack && stack.length > 0) {
         if (index >= stack.length) {
           index = stack.length - 1;
-        } else if (index < 0 ) {
+        } else if (index < 0) {
           if (index <= (-1 * stack.length)) {
             index = 0;
           } else {
@@ -258,6 +263,14 @@ var View = Backbone.View.extend({
     this.stopForwarding(); // 停止转发
     this.stopListening(); // 停止监听
     this.unmount(); // 卸载子视图
+    return this;
+  },
+
+  // 更新 nodes
+  updateNodes: function() {
+    this._detachStacks();
+    this._initNodeElements();
+    this._attachStacks();
     return this;
   }
 });
