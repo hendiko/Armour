@@ -1,31 +1,12 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 15:46:44
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-22 18:26:37
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-25 10:03:24
  */
 import _ from 'underscore';
-import Backbone from './core';
+import Backbone, { makeMap } from './core';
 
-// 生成属性观察映射关系
-var makeMap = function(original, destination, map) {
-  if (original == null) return map;
-  if (map === void 0) map = {};
-  var i = 0;
-  var names;
-  if (_.isArray(original)) {
-    for (i in original) {
-      map = makeMap(original[i], destination, map);
-    }
-  } else if (typeof original === 'object') {
-    for (names = _.keys(original); i < names.length; i++) {
-      map = makeMap(names[i], original[names[i]], map);
-    }
-  } else {
-    map[original] = destination == null ? original : destination;
-  }
-  return map;
-};
 
 // 封装异常
 var wrapError = function(model, options) {
@@ -79,7 +60,7 @@ var Model = Backbone.Model.extend({
     return xhr;
   },
 
-    // @param obj 被观察者。
+  // @param obj 被观察者。
   // @param original 同步起始字段
   // @param destination 同步终点字段
   // 
@@ -168,6 +149,8 @@ var Model = Backbone.Model.extend({
       (attrs = {})[key] = val;
     }
     options || (options = {});
+    // 防止 watchee 执行 set 方法时修改了 attrs 或 opts
+    // 先准备一个副本。
     var attributes = _.clone(attrs);
     var opts = _.clone(options);
 
@@ -238,6 +221,13 @@ var Model = Backbone.Model.extend({
         watcher.set(_.clone(attributes), _.clone(opts));
       } else {
         var data = _.reduce(watch, function(memo, destination, original) {
+          // 此处使用 changed[original] 作为变更值传递给 watcher。
+          // 另外一种看法是可以选择使用 attributes[original] 传递给 watcher。
+          // 因为 attributes 值在 set 过程中发生变化，如果支持 attributes[original]，
+          // 即意味着必须认同 watcher 在 set 过程中也可能更改 attributes。
+          // 但如果使用 attributes[original] 可能会导致观察意图被误解，
+          // 因为changed 中发生变化的属性未必存在于  attributes 中。
+          // 所以最终使用 changed[original]。
           if (_.has(changed, original)) memo[destination] = changed[original];
           return memo;
         }, {});

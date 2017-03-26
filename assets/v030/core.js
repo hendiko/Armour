@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-14 11:36:31
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-22 09:50:55
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-25 09:18:16
  */
 import Backbone from 'backbone';
 import _ from 'underscore';
@@ -36,6 +36,26 @@ export function isRefCycle(parent, child) {
   if (child === parent) return true;
   return isRefCycle(parent.parent, child);
 }
+
+// 转换属性观察映射关系(处理 watch 方法传参)
+export function makeMap(original, destination, map) {
+  if (original == null) return map;
+  if (map === void 0) map = {};
+  var i = 0;
+  var names;
+  if (_.isArray(original)) {
+    for (i in original) {
+      map = makeMap(original[i], destination, map);
+    }
+  } else if (typeof original === 'object') {
+    for (names = _.keys(original); i < names.length; i++) {
+      map = makeMap(names[i], original[names[i]], map);
+    }
+  } else {
+    map[original] = destination == null ? original : destination;
+  }
+  return map;
+};
 
 export var extend = Backbone.Model.extend;
 

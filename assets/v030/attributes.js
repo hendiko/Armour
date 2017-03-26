@@ -2,10 +2,10 @@
  * @Author: laixi
  * @Date:   2017-03-22 00:06:49
  * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-03-23 23:47:49
+ * @Last Modified time: 2017-03-27 00:08:48
  */
 import _ from 'underscore';
-import { slice, isTriggerable } from './core';
+import { slice, isTriggerable, makeMap } from './core';
 import Events from './events';
 
 
@@ -17,8 +17,10 @@ var Attributes = _.extend({
 
   _attributeAlias: 'attribute',
 
-  _listenToChangedAttributeCallback: function(attr, event) {
-    var args = slice.call(arguments, 1);
+  _listenToChangedAttributeCallback: function(attr, alias, event) {
+    var args = slice.call(arguments, 2);
+    // to prevent events propagation
+    if (alias != void 0 && alias === event || event.indexOf(alias + ':') === 0) return;
     this.trigger.apply(this, [this._attributeAlias + ':' + attr].concat(args));
     this.trigger.apply(this, [this._attributeAlias, attr].concat(args));
   },
@@ -32,7 +34,7 @@ var Attributes = _.extend({
       delete handlers[attr];
     }
     if (isTriggerable(value)) {
-      handler = handlers[attr] = _.partial(this._listenToChangedAttributeCallback, attr);
+      handler = handlers[attr] = _.partial(this._listenToChangedAttributeCallback, attr, value._attributeAlias);
       this.listenTo(value, 'all', handler);
     }
   },
@@ -72,6 +74,8 @@ var Attributes = _.extend({
     this.stopListening();
     // 停止所有转发
     this.stopForwarding();
+    // 停止所有观察
+    this.stopWatching();
     return this;
   },
 
@@ -111,8 +115,10 @@ var Attributes = _.extend({
     } else {
       (attrs = {})[key] = val;
     }
-
     options || (options = {});
+    var attributes = _.clone(attrs);
+    var opts = _.clone(options);
+    
     this._attributes || (this._attributes = {});
 
     var unset = options.unset;
@@ -153,6 +159,25 @@ var Attributes = _.extend({
       this._listenToChangedAttribute(changes[i], current[changes[i]]);
     }
 
+    // 同步设置 watcher 数据
+    var watchings, watching;
+    var objId = this._listenId;
+    _.each(this._watchers, function(watcher) {
+      watchings = watcher._watchings;
+      if (!watchings) return;
+      watching = watchings[objId];
+      var watch = watching['watch'];
+      if (watch == null) {
+        watcher.set(_.clone(attributes), _.clone(opts));
+      } else {
+        var data = _.reduce(watch, function(memo, destination, original) {
+          if (_.has(changed, original)) memo[destination] = changed[original];
+          return memo;
+        }, {});
+        watcher.set(data, _.clone(opts));
+      }
+    });
+
     if (!silent) {
       if (changes.length) this._pending = options;
       for (i = 0; i < changes.length; i++) {
@@ -182,7 +207,85 @@ var Attributes = _.extend({
     return this.set(attr, void 0, _.extend({}, options, {
       unset: true
     }));
+  },
+
+  // @param obj 被观察者。
+  // @param original 同步起始字段
+  // @param destination 同步终点字段
+  // 
+  // `watch` 方法支持传参方式：
+  //    1. watch(obj);
+  //    2. watch(obj, original, destination);
+  //    3. watch(obj, {original: destination});
+  //    4. watch(obj, [original1, original2, ...], destination);
+  // 
+  // 未指定 original, 或者 original == null，表示同步所有字段。
+  // 为指定 destination，表示同步起点与终点字段名称相同。
+  // watch(obj) 表示同步所有字段，
+  // 此时继续调用 watch(obj, original, destination)，表示停止同步所有字段，仅同步给定字段。
+  // 如果继续调用 watch(obj, original, destination)，表示增加（或更新）同步字段。 
+  watch: function(obj, original, destination) {
+    if (!obj) return this;
+
+    if (!this._listenId) this._listenId = _.uniqueId('l');
+    if (!obj._listenId) obj._listenId = _.uniqueId('l');
+
+    var watchings = this._watchings || (this._watchings = {});
+    var watchers = obj._watchers || (obj._watchers = {});
+    var watching = watchings[obj._listenId] || (watchings[obj._listenId] = { obj: obj });
+    var map = makeMap(original, destination);
+    watching['watch'] = map == null ? null : _.defaults(map, watching['watch']);
+    watchers[this._listenId] = this;
+    return this;
+  },
+
+  /**
+   * stopWatching();
+   * stopWatching(obj);
+   * stopWatching(obj, original);
+   * stopWatching(obj, [original1, original2, ...], destination);
+   * stopWatching(obj, {original: destination});
+   *
+   * 当 a 观察 b 所有属性时，如果调用 stopWatching，无论如何传参，
+   * 都会导致 a 停止观察 b 所有属性。
+   */
+  stopWatching: function(obj, original, destination) {
+    var watchings = this._watchings;
+    if (!watchings) return this;
+    var iteration = obj ? [watchings[obj._listenId]] : _.values(watchings);
+
+    var watchee;
+    var watch;
+    var thisId = this._listenId;
+    var map = makeMap(original, destination);
+    var callback = function(value, key) {
+      return map == null ? true : map[key] === value;
+    };
+    _.each(iteration, function(watching) {
+      watch = _.omit(watching.watch, callback);
+      if (_.isEmpty(watch)) {
+        watchee = watching.obj;
+        if (watchee._watchers) delete watchee._watchers[thisId];
+        if (_.isEmpty(watchee._watchers)) watchee._watchers = void 0;
+        delete watchings[watchee._listenId];
+      } else {
+        watching.watch = watch;
+      }
+    });
+    if (_.isEmpty(watchings)) this._watchings = void 0;
+    return this;
+  },
+
+  /** 清除所有观察者，不让其他对象观察自己 */
+  preventWatching: function() {
+    var watchers = _.values(this._watchers);
+    var that = this;
+    _.each(watchers, function(watcher) {
+      watcher.stopWatching(that);
+    });
+    return this;
   }
+
 
 }, Events);
 
