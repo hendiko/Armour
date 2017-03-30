@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-24 14:55:58
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-30 00:36:37
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -38,7 +38,7 @@ var mountApi = function(parent, child, nodeName, options) {
 };
 
 // 卸载子视图
-var unmountApi = function(parent, child, nodeName) {
+var unmountApi = function(parent, child, nodeName, options) {
   var stack = _.property(nodeName)(parent._nodeStacks);
   var children = parent._nodeChildren;
   if (!stack || !children) return false;
@@ -49,10 +49,11 @@ var unmountApi = function(parent, child, nodeName) {
 
   delete children[childId];
 
-  child.$el.detach();
   child.parent = null;
+  child.$el.detach();
   parent.trigger('unmount', child, nodeName);
   child.trigger('free', parent, nodeName);
+  if (options.remove) child.remove();
   return child;
 };
 
@@ -152,6 +153,8 @@ var View = Backbone.View.extend({
   },
 
   // 挂载子视图
+  // options.reset 表示挂载子视图前将节点现有的视图卸载。
+  // options.remove 如果为真，表示卸载视图的同时销毁视图。
   mount: function(child, nodeName, options) {
     if (!child) return false;
     if (isRefCycle(this, child)) return false;
@@ -159,7 +162,7 @@ var View = Backbone.View.extend({
     if (!this.hasNode(nodeName)) return false;
     options || (options = {});
     if (options.reset) {
-      this.unmount(nodeName);
+      this.unmount(nodeName, options);
     }
     child.free(); // 确保 child 是自由的
     return mountApi(this, child, nodeName, options) && this;
@@ -172,24 +175,24 @@ var View = Backbone.View.extend({
   },
 
   // 卸载子视图
-  unmount: function(node) {
+  unmount: function(node, options) {
     var children = this._nodeChildren;
     if (!children) return this;
     var that = this;
     var map;
     if (node === void 0) {
       _.each(_.values(children), function(item) {
-        unmountApi(that, item.view, item.node);
+        unmountApi(that, item.view, item.node, options);
       });
     } else if (_.isString(node)) {
       var stack = _.clone(_.property(node)(this._nodeStacks));
       _.each(stack, function(child) {
         map = children[child.cid];
-        if (map) unmountApi(that, map.view, map.node);
+        if (map) unmountApi(that, map.view, map.node, options);
       });
     } else {
       map = children[node.cid];
-      if (map) unmountApi(this, map.view, map.node);
+      if (map) unmountApi(this, map.view, map.node, options);
     }
     return this;
   },
@@ -275,7 +278,7 @@ var View = Backbone.View.extend({
   }
 });
 
-_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo', 'hide', 'show'], function(method) {
+_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo', 'hide', 'show', 'attr', 'css'], function(method) {
   View.prototype[method] = function() {
     return this.$el[method].apply(this.$el, arguments);
   }
