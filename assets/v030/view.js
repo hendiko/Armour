@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-03-30 00:36:37
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-04-01 11:01:32
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -42,6 +42,7 @@ var unmountApi = function(parent, child, nodeName, options) {
   var stack = _.property(nodeName)(parent._nodeStacks);
   var children = parent._nodeChildren;
   if (!stack || !children) return false;
+  options || (options = {});
   var childId = child.cid;
 
   var position = stack.indexOf(child);
