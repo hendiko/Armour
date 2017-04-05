@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-04-01 11:01:32
+ * @Last Modified time: 2017-04-01 14:15:29
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -279,7 +279,7 @@ var View = Backbone.View.extend({
   }
 });
 
-_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo', 'hide', 'show', 'attr', 'css'], function(method) {
+_.each(['append', 'appendTo', 'detach', 'html', 'prepend', 'prependTo', 'hide', 'show', 'attr', 'css', 'addClass', 'removeClass'], function(method) {
   View.prototype[method] = function() {
     return this.$el[method].apply(this.$el, arguments);
   }
