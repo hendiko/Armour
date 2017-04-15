@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-04-01 14:15:29
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-04-15 13:54:28
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle } from './core';
@@ -175,6 +175,15 @@ var View = Backbone.View.extend({
     return parent.mount(this, nodeName, options) && this;
   },
 
+  // 事件冒泡
+  bubble: function() {
+    this.trigger.apply(this, arguments);
+    if (this.parent) {
+      this.parent.bubble.apply(this.parent, arguments);
+    }
+  },
+
+
   // 卸载子视图
   unmount: function(node, options) {
     var children = this._nodeChildren;
@@ -269,6 +278,7 @@ var View = Backbone.View.extend({
     this.unmount(); // 卸载子视图
     return this;
   },
+
 
   // 更新 nodes
   updateNodes: function() {

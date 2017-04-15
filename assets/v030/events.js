@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-20 16:04:59
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-03-21 23:31:39
+ * @Last Modified by:   xavier
+ * @Last Modified time: 2017-04-08 19:46:22
  */
 import _ from 'underscore';
 import Backbone, { slice, trim } from './core';
@@ -277,7 +277,11 @@ var makeForwardMap = function(original, destination, map) {
   if (map === void 0) map = {};
   var i = 0;
   var names;
-  if (typeof original === 'object') {
+  if (_.isArray(original)) {
+    for (i in original) {
+      map = makeForwardMap(original[i], destination, map);
+    }
+  } else if (typeof original === 'object') {
     for (names = _.keys(original); i < names.length; i++) {
       map = makeForwardMap(names[i], original[names[i]], map);
     }
