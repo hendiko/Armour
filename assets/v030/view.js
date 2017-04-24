@@ -2,12 +2,13 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-04-15 13:54:28
+ * @Last Modified time: 2017-04-24 15:24:32
  */
 import _ from 'underscore';
-import Backbone, { isRefCycle } from './core';
+import Backbone, { isRefCycle, trim, eventSplitter } from './core';
+import Attributes from './attributes';
 
-var viewOptions = ['controller', 'model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events', 'render'];
+var viewOptions = ['controller', 'model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events', 'render', 'props'];
 
 // 挂载子视图
 var mountApi = function(parent, child, nodeName, options) {
@@ -32,8 +33,9 @@ var mountApi = function(parent, child, nodeName, options) {
     if ($node) $node.append(child.$el);
   }
   child.parent = parent;
-  parent.trigger('mount', child, nodeName);
-  child.trigger('attach', parent, nodeName);
+  watchApi(parent, child, options);
+  parent.trigger('mount', child, nodeName, options);
+  child.trigger('attach', parent, nodeName, options);
   return child;
 };
 
@@ -52,23 +54,43 @@ var unmountApi = function(parent, child, nodeName, options) {
 
   child.parent = null;
   child.$el.detach();
-  parent.trigger('unmount', child, nodeName);
-  child.trigger('free', parent, nodeName);
-  if (options.remove) child.remove();
+  stopWatchingApi(parent, child);
+  parent.trigger('unmount', child, nodeName, options);
+  child.trigger('free', parent, nodeName, options);
+  if (options.remove) child.remove(options);
   return child;
 };
 
+var onParentChange = function(model, options) {
+  this.set(_.pick(model.changedAttributes(), this.props), options);
+};
 
-var View = Backbone.View.extend({
+var watchApi = function(parent, child, options) {
+  child.set(_.pick(parent.toJSON(), child.props));
+  if (options.watch === true) child.listenTo(parent, 'change', onParentChange);
+};
+
+var stopWatchingApi = function(parent, child) {
+  child.stopListening(parent, 'change', onParentChange);
+};
+
+var nodeSelector = /^(@)(\S+$)/;
+
+var View = Backbone.View.extend(Attributes).extend({
 
   constructor: function(options) {
     this.cid = _.uniqueId('view');
+    this._attributes = {};
     this.parent = null; // 初始状态没有父视图
     options || (options = {});
     _.extend(this, _.pick(options, viewOptions));
+    this.props = _.isArray(this.props) ? _.clone(this.props) : [];
+    this.set(_.defaults({}, options.data, _.result(this, 'defaults')), options);
+    this.changed = {}; // reset this.changed to an empty object.   
+
     this._ensureElement();
     // this.nodes 表示 node 名称与元素路径的映射关系
-    this.nodes = _.extend({}, _.result(this, 'nodes'), options.nodes);
+    this.nodes = this._initNodes(_.extend({}, _.result(this, 'nodes'), options.nodes));
     this._initNodeStacks(); // 初始化 node 堆栈
     this._initNodeElements(); // 初始化 node 元素
 
@@ -116,6 +138,14 @@ var View = Backbone.View.extend({
       stacks[nodeName] = [];
     });
     this._nodeStacks = stacks;
+  },
+
+  // 初始化 nodes 属性
+  // 支持简写 {bar: '@foo'}，表示 {bar: '[node="foo"]'}。
+  _initNodes: function(nodes) {
+    return _.mapObject(nodes, function(val, key) {
+      return trim(val).replace(nodeSelector, '[node="$2"]');
+    });
   },
 
   // 渲染视图前，暂时脱离所有子视图
@@ -175,12 +205,68 @@ var View = Backbone.View.extend({
     return parent.mount(this, nodeName, options) && this;
   },
 
-  // 事件冒泡
-  bubble: function() {
-    this.trigger.apply(this, arguments);
-    if (this.parent) {
-      this.parent.bubble.apply(this.parent, arguments);
+  // 事件向下传播
+  broadcast: function(event, args, options) {
+    options || (options = {});
+    _.defaults(options, { target: this, currentTarget: this });
+    var result = this.broadcastParser(event, args, options);
+    if (!result) return this;
+    event = result.event;
+    args = result.args;
+    options = result.options || {};
+    if (!event || !_.isString(event) || options.silent || !this.propagationFilter(event, args, options)) return this;
+    this.trigger(event, args, options);
+    _.extend(options, { currentTarget: this });
+    var stacks = [];
+    if (!_.isString(options.node)) {
+      stacks = _.values(this.getStack());
+    } else {
+      var that = this;
+      var stack;
+      _.each(options.node.split(eventSplitter), function(nodeName) {
+        stack = that.getStack(nodeName);
+        if (stack) stacks.push(stack);
+      });
     }
+    _.each(stacks, function(stack) {
+      _.each(stack, function(child) {
+        child.broadcast(event, _.clone(args), _.clone(options));
+      });
+    });
+  },
+
+  broadcastParser: function(event, args, options) {
+    return { event: event, args: args, options: options };
+  },
+
+  broadcastFilter: function(event, args, options) {
+    return true;
+  },
+
+  // 事件冒泡
+  propagate: function(event, args, options) {
+    options || (options = {});
+    _.defaults(options, { target: this, currentTarget: this });
+    var result = this.propagationParser(event, args, options);
+    if (!result) return this;
+    event = result.event;
+    args = result.args;
+    options = result.options;
+    if (!event || !_.isString(event) || options.silent || !this.propagationFilter(event, args, options)) return this;
+    this.trigger(event, args, options);
+    if (this.parent) {
+      _.extend(options, { currentTarget: this });
+      this.parent.propagate(event, _.clone(args), _.clone(options));
+    }
+  },
+
+  propagationParser: function(event, args, options) {
+    return { event: event, args: args, options: options };
+  },
+
+  // 过滤事件冒泡，如果返回值为否，则该事件冒泡将被阻止。否则继续事件冒泡。
+  propagationFilter: function(event, args, options) {
+    return true;
   },
 
 
@@ -190,7 +276,7 @@ var View = Backbone.View.extend({
     if (!children) return this;
     var that = this;
     var map;
-    if (node === void 0) {
+    if (node == void 0) {
       _.each(_.values(children), function(item) {
         unmountApi(that, item.view, item.node, options);
       });
@@ -270,12 +356,12 @@ var View = Backbone.View.extend({
   },
 
   // @override
-  remove: function() {
+  remove: function(options) {
     this.free(); // 释放自己
     this._removeElement();
     this.stopForwarding(); // 停止转发
     this.stopListening(); // 停止监听
-    this.unmount(); // 卸载子视图
+    this.unmount(null, options); // 卸载子视图
     return this;
   },
 

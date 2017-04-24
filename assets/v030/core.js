@@ -2,10 +2,14 @@
  * @Author: laixi
  * @Date:   2017-03-14 11:36:31
  * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-03-25 09:18:16
+ * @Last Modified time: 2017-04-24 10:46:25
  */
 import Backbone from 'backbone';
 import _ from 'underscore';
+
+
+// 事件名称分隔符
+export const eventSplitter = /\s+/;
 
 // 委托获取属性或执行方法。
 // 如果 attr 是 obj 的属性，则直接返回该属性值。

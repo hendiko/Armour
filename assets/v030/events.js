@@ -1,16 +1,13 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-20 16:04:59
- * @Last Modified by:   xavier
- * @Last Modified time: 2017-04-08 19:46:22
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-04-24 10:49:23
  */
 import _ from 'underscore';
-import Backbone, { slice, trim } from './core';
+import Backbone, { slice, trim, eventSplitter } from './core';
 
 var Events = Backbone.Events = {};
-
-// 事件名称分隔符
-var eventSplitter = /\s+/;
 
 // 将不同传参转换为标准传参进行对应函数的调用（iteratee）
 var eventsApi = function(iteratee, events, name, callback, opts) {

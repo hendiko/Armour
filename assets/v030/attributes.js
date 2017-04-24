@@ -2,11 +2,25 @@
  * @Author: laixi
  * @Date:   2017-03-22 00:06:49
  * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-03-27 00:08:48
+ * @Last Modified time: 2017-04-24 17:37:38
  */
 import _ from 'underscore';
-import { slice, isTriggerable, makeMap } from './core';
+import { slice, isTriggerable, makeMap, eventSplitter, trim } from './core';
 import Events from './events';
+
+
+var _changedIteratee = function(name) {
+  if (_.isString(name)) {
+    name = trim(name);
+    return name ? name.split(eventSplitter) : [];
+  }
+  if (!_.isArray(name)) return [];
+  return name;
+};
+
+var _changedPredicate = function(key) {
+  return this.hasOwnProperty(key);
+};
 
 
 var Attributes = _.extend({
@@ -37,6 +51,20 @@ var Attributes = _.extend({
       handler = handlers[attr] = _.partial(this._listenToChangedAttributeCallback, attr, value._attributeAlias);
       this.listenTo(value, 'all', handler);
     }
+  },
+
+  /** 检查给定的属性名称（数组或者是空格分隔的字符串），是否全部都发生了变化。 */
+  allChanged: function(name) {
+    var changed = this.changedAttributes();
+    if (!changed) return false;
+    return _.every(_changedIteratee(name), _changedPredicate, changed);
+  },
+
+  /** 检查给定的属性名称（数组或者是空格分隔的字符串），是否至少有一个属性发生了变化。 */
+  anyChanged: function(name) {
+    var changed = this.changedAttributes();
+    if (!changed) return false;
+    return _.any(_changedIteratee(name), _changedPredicate, changed);
   },
 
   // 检查 attributes 是否发生变化（diff 为假），或是否会发生变化（diff 为真）
@@ -118,7 +146,7 @@ var Attributes = _.extend({
     options || (options = {});
     var attributes = _.clone(attrs);
     var opts = _.clone(options);
-    
+
     this._attributes || (this._attributes = {});
 
     var unset = options.unset;
@@ -289,5 +317,52 @@ var Attributes = _.extend({
 
 }, Events);
 
+
+// @Backbone#addMethod
+var addMethod = function(length, method, attribute) {
+  switch (length) {
+    case 1:
+      return function() {
+        return _[method](this[attribute]);
+      };
+    case 2:
+      return function(value) {
+        return _[method](this[attribute], value);
+      };
+    case 3:
+      return function(iteratee, context) {
+        return _[method](this[attribute], cb(iteratee, this), context);
+      };
+    case 4:
+      return function(iteratee, defaultVal, context) {
+        return _[method](this[attribute], cb(iteratee, this), defaultVal, context);
+      };
+    default:
+      return function() {
+        var args = slice.call(arguments);
+        args.unshift(this[attribute]);
+        return _[method].apply(_, args);
+      };
+  }
+};
+
+var addUnderscoreMethods = function(proto, methods, attribute) {
+  _.each(methods, function(length, method) {
+    if (_[method]) proto[method] = addMethod(length, method, attribute);
+  });
+};
+
+var underscoreMethods = {
+  keys: 1,
+  values: 1,
+  pairs: 1,
+  invert: 1,
+  pick: 0,
+  omit: 0,
+  chain: 1,
+  isEmpty: 1
+};
+
+addUnderscoreMethods(Attributes, underscoreMethods, '_attributes');
 
 export default Attributes;

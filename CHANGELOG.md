@@ -1,6 +1,15 @@
 # 2017-03-21 v0.3.0 developing
 
 1. 修复被监听者调用 off() 方法不能清除 forwardOnce 生成的绑定关系。 
+2. Attributes 和 Model 实例增加 anyChange 与 allChange 方法。
+3. Attributes 实例增加 underscore 方法。
+4. View 对象更新：
+  4.1. 初始化参数增加 options.props 参数，表示挂载时获取父视图数据。
+  4.2. mount 方法增加 options.watch = true 参数，表示是否要观察父视图属性变化。
+  4.3. remove 方法增加 options.remove = true 参数，表示视图销毁时同时销毁子视图。
+  4.4. 增加父视图向子视图广播(broadcast)以及子视图向父视图冒泡(propagate)。
+  4.5. 初始化视图时增加 options.data 参数支持，表示初始化视图属性。
+  4.6. 默认混合 Attributes 对象，无需再额外扩展。
 
 # 2017-03-14 v0.1.0 released
 
