@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-04-24 15:24:32
+ * @Last Modified time: 2017-04-25 09:00:06
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -359,8 +359,9 @@ var View = Backbone.View.extend(Attributes).extend({
   remove: function(options) {
     this.free(); // 释放自己
     this._removeElement();
-    this.stopForwarding(); // 停止转发
-    this.stopListening(); // 停止监听
+    this.stopListening();
+    this.stopForwarding();
+    this.stopWatching();
     this.unmount(null, options); // 卸载子视图
     return this;
   },
