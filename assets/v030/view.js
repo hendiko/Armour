@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-04-25 09:00:06
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-05-03 18:13:59
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -186,6 +186,7 @@ var View = Backbone.View.extend(Attributes).extend({
   // 挂载子视图
   // options.reset 表示挂载子视图前将节点现有的视图卸载。
   // options.remove 如果为真，表示卸载视图的同时销毁视图。
+  // options.watch 
   mount: function(child, nodeName, options) {
     if (!child) return false;
     if (isRefCycle(this, child)) return false;
