@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-03 18:13:59
+ * @Last Modified time: 2017-05-11 15:57:27
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -74,7 +74,19 @@ var stopWatchingApi = function(parent, child) {
   child.stopListening(parent, 'change', onParentChange);
 };
 
-var nodeSelector = /^(@)(\S+$)/;
+var attrSelector = /(@)([\w-]+)/;
+
+var makeEvents = (function() {
+
+  var iteratee = function(memo, val, key) {
+    memo[trim(key).replace(attrSelector, '[at="$2"]')] = val;
+    return memo;
+  };
+
+  return function(events) {
+    return _.reduce(events, iteratee, {});
+  };
+}());
 
 var View = Backbone.View.extend(Attributes).extend({
 
@@ -85,6 +97,7 @@ var View = Backbone.View.extend(Attributes).extend({
     options || (options = {});
     _.extend(this, _.pick(options, viewOptions));
     this.props = _.isArray(this.props) ? _.clone(this.props) : [];
+    this.events = makeEvents(_.result(this, 'events'));
     this.set(_.defaults({}, options.data, _.result(this, 'defaults')), options);
     this.changed = {}; // reset this.changed to an empty object.   
 
@@ -144,7 +157,7 @@ var View = Backbone.View.extend(Attributes).extend({
   // 支持简写 {bar: '@foo'}，表示 {bar: '[node="foo"]'}。
   _initNodes: function(nodes) {
     return _.mapObject(nodes, function(val, key) {
-      return trim(val).replace(nodeSelector, '[node="$2"]');
+      return trim(val).replace(attrSelector, '[node="$2"]');
     });
   },
 
@@ -231,15 +244,17 @@ var View = Backbone.View.extend(Attributes).extend({
     }
     _.each(stacks, function(stack) {
       _.each(stack, function(child) {
-        child.broadcast(event, _.clone(args), _.clone(options));
+        child.broadcast(event, args, _.clone(options));
       });
     });
   },
 
+  // @unstable
   broadcastParser: function(event, args, options) {
     return { event: event, args: args, options: options };
   },
 
+  // @unstable
   broadcastFilter: function(event, args, options) {
     return true;
   },
@@ -257,14 +272,19 @@ var View = Backbone.View.extend(Attributes).extend({
     this.trigger(event, args, options);
     if (this.parent) {
       _.extend(options, { currentTarget: this });
-      this.parent.propagate(event, _.clone(args), _.clone(options));
+      // 不再传递 _.clone(args)，而是直接使用 args 作为参数传递。
+      // 使用 _.clone(args) 传递，如果 args 是一个类实例，例如 view 的实例。
+      // 会导致被传递的参数实际上并不是原 view。
+      this.parent.propagate(event, args, _.clone(options));
     }
   },
 
+  // @unstable
   propagationParser: function(event, args, options) {
     return { event: event, args: args, options: options };
   },
 
+  // @unstable
   // 过滤事件冒泡，如果返回值为否，则该事件冒泡将被阻止。否则继续事件冒泡。
   propagationFilter: function(event, args, options) {
     return true;

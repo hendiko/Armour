@@ -10,6 +10,11 @@
   4.4. 增加父视图向子视图广播(broadcast)以及子视图向父视图冒泡(propagate)。
   4.5. 初始化视图时增加 options.data 参数支持，表示初始化视图属性。
   4.6. 默认混合 Attributes 对象，无需再额外扩展。
+  4.7. events 与 nodes 支持 @ 语法。
+
+Todos: 
+
+1. View 优化事件委托，支持动态修改 events 属性使用 @ 语法。
 
 # 2017-03-14 v0.1.0 released
 
