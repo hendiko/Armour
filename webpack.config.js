@@ -13,10 +13,11 @@ module.exports = {
     loaders: [{
       test: /\.js$/,
       exclude: /node_modules/,
-      loader: 'babel-loader',
-      query: {
-        presets: ['es2015'],
-      }
+      loaders: ['es3ify', `babel?${JSON.stringify({presets: ['es2015']})}`]
+      // loader: 'babel-loader',
+      // query: {
+      //   presets: ['es2015'],
+      // }
     }]
   },
   externals: {
