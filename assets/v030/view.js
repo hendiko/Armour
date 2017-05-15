@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   Xavier Yin
- * @Last Modified time: 2017-05-15 10:16:56
+ * @Last Modified by:   laixi
+ * @Last Modified time: 2017-05-15 11:49:02
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -212,8 +212,8 @@ var View = Backbone.View.extend(Attributes).extend({
   // 委托事件过滤器
   // 每个 DOM 事件默认只应被处理一次（距离自己最近的一个 View 来处理）
   delegateEventFilter: function(e) {
-    if (e.originalView) return;
-    e.originalView = this;
+    if (e.originalEvent.originalView) return;
+    e.originalEvent.originalView = this;
     return e;
   },
 
