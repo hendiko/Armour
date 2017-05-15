@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-11 15:57:27
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-05-15 10:16:56
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -75,6 +75,8 @@ var stopWatchingApi = function(parent, child) {
 };
 
 var attrSelector = /(@)([\w-]+)/;
+// Cached regex to split keys for `delegate`.
+var delegateEventSplitter = /^(\S+)\s*(.*)$/;
 
 var makeEvents = (function() {
 
@@ -88,6 +90,7 @@ var makeEvents = (function() {
   };
 }());
 
+
 var View = Backbone.View.extend(Attributes).extend({
 
   constructor: function(options) {
@@ -97,7 +100,6 @@ var View = Backbone.View.extend(Attributes).extend({
     options || (options = {});
     _.extend(this, _.pick(options, viewOptions));
     this.props = _.isArray(this.props) ? _.clone(this.props) : [];
-    this.events = makeEvents(_.result(this, 'events'));
     this.set(_.defaults({}, options.data, _.result(this, 'defaults')), options);
     this.changed = {}; // reset this.changed to an empty object.   
 
@@ -194,6 +196,39 @@ var View = Backbone.View.extend(Attributes).extend({
 
   $node: function(name) {
     return this._nodeElements && this._nodeElements[name];
+  },
+
+  // 封装委托事件的回调函数，决定是否执行回调函数。
+  _wrapDelegateEventHandler: function(method) {
+    return function(e) {
+      var result = _.isFunction(this.delegateEventFilter) ? this.delegateEventFilter(e) : e;
+      if (!result) return;
+      var args = _.toArray(arguments);
+      args[0] = result;
+      method.apply(this, args);
+    };
+  },
+
+  // 委托事件过滤器
+  // 每个 DOM 事件默认只应被处理一次（距离自己最近的一个 View 来处理）
+  delegateEventFilter: function(e) {
+    if (e.originalView) return;
+    e.originalView = this;
+    return e;
+  },
+
+  delegateEvents: function(events) {
+    events || (events = makeEvents(_.result(this, 'events')));
+    if (!events) return this;
+    this.undelegateEvents();
+    for (var key in events) {
+      var method = events[key];
+      if (!_.isFunction(method)) method = this[method];
+      if (!method) continue;
+      var match = key.match(delegateEventSplitter);
+      this.delegate(match[1], match[2], _.bind(this._wrapDelegateEventHandler(method), this));
+    }
+    return this;
   },
 
   // 挂载子视图

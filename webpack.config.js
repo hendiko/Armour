@@ -13,7 +13,7 @@ module.exports = {
     loaders: [{
       test: /\.js$/,
       exclude: /node_modules/,
-      loaders: ['es3ify', `babel?${JSON.stringify({presets: ['es2015']})}`]
+      loaders: [`babel-loader?${JSON.stringify({presets: [['es2015', {"loose": true}]]})}`]
       // loader: 'babel-loader',
       // query: {
       //   presets: ['es2015'],

@@ -1,8 +1,8 @@
 /*
  * @Author: laixi
  * @Date:   2017-03-14 11:34:34
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-12 11:23:27
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-05-15 10:35:25
  */
 import _ from 'underscore';
 import Attributes from './attributes';
@@ -25,6 +25,6 @@ _.each(['Model', 'View', 'Collection', 'Router', 'History'], function(klass) {
 
 // 扩展 Model 实例方法，增加 allChanged 和 anyChanged 方法。
 _.extend(Model.prototype, _.pick(Attributes, 'allChanged', 'anyChanged'));
-Backbone.JVERSION = '0.3.1';
+Backbone.JVERSION = '0.3.2';
 // this is invalid in es6
 module.exports = Backbone;
