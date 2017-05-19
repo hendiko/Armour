@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-15 11:49:02
+ * @Last Modified time: 2017-05-18 17:56:43
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -310,7 +310,11 @@ var View = Backbone.View.extend(Attributes).extend({
       // 不再传递 _.clone(args)，而是直接使用 args 作为参数传递。
       // 使用 _.clone(args) 传递，如果 args 是一个类实例，例如 view 的实例。
       // 会导致被传递的参数实际上并不是原 view。
-      this.parent.propagate(event, args, _.clone(options));
+      if (options.parent) {
+        this.parent.trigger(event, args, _.clone(options));
+      } else {
+        this.parent.propagate(event, args, _.clone(options));        
+      }
     }
   },
 

@@ -12,7 +12,9 @@
   4.6. 默认混合 Attributes 对象，无需再额外扩展。
   4.7. events 与 nodes 支持 @ 语法。(v0.3.1)
   4.8. View 增加委托事件过滤机制，默认一个事件只被一个 View 处理。(v0.3.2)
+  4.9. View#propagate(event, args, options) 支持在 options.parent  为真时只冒泡到父级视图。
 5. 新增 Backbone.Request 对象。(v0.3.3)
+6. 修复 Backbone.Collection#model 默认引用的是 Backbone 原生 Model。
 
 Todos: 
 

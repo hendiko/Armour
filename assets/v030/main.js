@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-14 11:34:34
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-15 17:33:07
+ * @Last Modified time: 2017-05-17 13:57:15
  */
 import _ from 'underscore';
 import Attributes from './attributes';
@@ -18,6 +18,9 @@ Backbone.Controller = Controller;
 Backbone.Model = Model;
 Backbone.Request = Request;
 Backbone.View = View;
+Backbone.Collection = Backbone.Collection.extend({
+  model: Model
+});
 
 _.extend(Backbone, Events);
 
@@ -27,6 +30,6 @@ _.each(['Model', 'View', 'Collection', 'Router', 'History'], function(klass) {
 
 // 扩展 Model 实例方法，增加 allChanged 和 anyChanged 方法。
 _.extend(Model.prototype, _.pick(Attributes, 'allChanged', 'anyChanged'));
-Backbone.JVERSION = '0.3.3';
+Backbone.JVERSION = '0.3.4';
 // this is invalid in es6
 module.exports = Backbone;
