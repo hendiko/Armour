@@ -1,33 +1,23 @@
 /*
  * @Author: laixi
- * @Date:   2017-02-28 15:31:25
- * @Last Modified by:   laixi
- * @Last Modified time: 2017-02-28 16:22:42
- *
- * Backbone.Model
- * ===========
- *
- * 增强原 Backbone.Model 类，增加了 `watch` 和 `stopWatching` 实例方法。
- * `watch` 方法用以在不同模型之间同步数据，`stopWatching` 方法用以停止不同模型之间的数据同步。
- * 
- * `watch` 方法与 `change` 事件的区别：
- * 使用 `watch` 方法可以将数据同步逻辑与数据修改逻辑分隔开，
- * 数据同步用以解决模型之间数据一致性的需求，类似于数据表外键的同步。
- * 而 `change` 事件应被用于更关注数据发生变化后，应处理的其他逻辑事务，例如 UI 渲染。
- * 
- * 观察者(watcher) 的 `_watchings` 字段用以保存所有外键关系。
- * 被观察者 (watchee) 的 `_watchers` 字段用以保存所有观察者的引用。
- * 
+ * @Date:   2017-03-22 15:46:44
+ * @Last Modified by:   Xavier Yin
+ * @Last Modified time: 2017-03-25 10:03:24
  */
-var _ = require('underscore');
-var Backbone = require('./core');
-var utils = require('./utils');
-var wrapError = utils.wrapError;
+import _ from 'underscore';
+import Backbone, { makeMap } from './core';
 
 
-module.exports = Backbone.Model;
+// 封装异常
+var wrapError = function(model, options) {
+  var error = options.error;
+  options.error = function(resp) {
+    if (error) error.call(options.context, model, resp, options);
+    model.trigger('error', model, resp, options);
+  };
+};
 
-_.extend(Backbone.Model.prototype, {
+var Model = Backbone.Model.extend({
 
   // @override
   destroy: function(options) {
@@ -78,7 +68,7 @@ _.extend(Backbone.Model.prototype, {
   //    1. watch(obj);
   //    2. watch(obj, original, destination);
   //    3. watch(obj, {original: destination});
-  //    4. watch(obj, [original1, original2, ...]);
+  //    4. watch(obj, [original1, original2, ...], destination);
   // 
   // 未指定 original, 或者 original == null，表示同步所有字段。
   // 为指定 destination，表示同步起点与终点字段名称相同。
@@ -87,60 +77,63 @@ _.extend(Backbone.Model.prototype, {
   // 如果继续调用 watch(obj, original, destination)，表示增加（或更新）同步字段。 
   watch: function(obj, original, destination) {
     if (!obj) return this;
-    var map = {};
-    if (original == null) {
-      map = null;
-    } else if (_.isString(original)) {
-      map[original] = _.isString(destination) ? destination : null;
-    } else if (_.isArray(original)) {
-      map = _.reduce(original, function(memo, name) {
-        if (_.isString(name)) memo[name] = null;
-        return memo;
-      }, {});
-    } else {
-      map = original;
-    }
 
-    if (!this._watchings) this._watchings = {};
-    if (!obj._watchers) obj._watchers = {};
     if (!this._listenId) this._listenId = _.uniqueId('l');
     if (!obj._listenId) obj._listenId = _.uniqueId('l');
 
-    var watchings = this._watchings;
-    var watchers = obj._watchers;
-
-    var watching = watchings[obj._listenId] || (watchings[obj._listenId] = {
-      obj: obj
-    });
-    var watch = watching['watch'];
-    watching['watch'] = map == null ? null : _.extend({}, watch, map);
-
-    if (!watchers[this._listenId]) {
-      watchers[this._listenId] = this;
-    }
-
+    var watchings = this._watchings || (this._watchings = {});
+    var watchers = obj._watchers || (obj._watchers = {});
+    var watching = watchings[obj._listenId] || (watchings[obj._listenId] = { obj: obj });
+    var map = makeMap(original, destination);
+    watching['watch'] = map == null ? null : _.defaults(map, watching['watch']);
+    watchers[this._listenId] = this;
     return this;
   },
 
-  // @param obj (可选) 被观察者，如果为给定 obj，则停止观察所有被观察者。
-  stopWatching: function(obj) {
+  /**
+   * stopWatching();
+   * stopWatching(obj);
+   * stopWatching(obj, original);
+   * stopWatching(obj, [original1, original2, ...], destination);
+   * stopWatching(obj, {original: destination});
+   *
+   * 当 a 观察 b 所有属性时，如果调用 stopWatching，无论如何传参，
+   * 都会导致 a 停止观察 b 所有属性。
+   */
+  stopWatching: function(obj, original, destination) {
     var watchings = this._watchings;
     if (!watchings) return this;
-    var maps = obj ? [watchings[obj._listenId]] : _.values(watchings);
+    var iteration = obj ? [watchings[obj._listenId]] : _.values(watchings);
 
     var watchee;
+    var watch;
     var thisId = this._listenId;
-    _.each(maps, function(map) {
-      if (map) {
-        watchee = map.obj;
-        if (watchee._watchers) {
-          delete watchee._watchers[thisId];
-        }
+    var map = makeMap(original, destination);
+    var callback = function(value, key) {
+      return map == null ? true : map[key] === value;
+    };
+    _.each(iteration, function(watching) {
+      watch = _.omit(watching.watch, callback);
+      if (_.isEmpty(watch)) {
+        watchee = watching.obj;
+        if (watchee._watchers) delete watchee._watchers[thisId];
         if (_.isEmpty(watchee._watchers)) watchee._watchers = void 0;
         delete watchings[watchee._listenId];
+      } else {
+        watching.watch = watch;
       }
     });
     if (_.isEmpty(watchings)) this._watchings = void 0;
+    return this;
+  },
+
+  /** 清除所有观察者，不让其他对象观察自己 */
+  preventWatching: function() {
+    var watchers = _.values(this._watchers);
+    var that = this;
+    _.each(watchers, function(watcher) {
+      watcher.stopWatching(that);
+    });
     return this;
   },
 
@@ -156,10 +149,10 @@ _.extend(Backbone.Model.prototype, {
       (attrs = {})[key] = val;
     }
     options || (options = {});
-
+    // 防止 watchee 执行 set 方法时修改了 attrs 或 opts
+    // 先准备一个副本。
     var attributes = _.clone(attrs);
     var opts = _.clone(options);
-
 
     if (!this._validate(attrs, options)) return false;
     var unset = options.unset;
@@ -177,6 +170,7 @@ _.extend(Backbone.Model.prototype, {
     var current = this.attributes; // 当前属性哈希
     var changed = this.changed; // 当前变化属性哈希
     var prev = this._previousAttributes; // 操作前属性哈希
+
 
     // 遍历输入哈希，更新或删除哈希值
     for (var attr in attrs) {
@@ -214,6 +208,7 @@ _.extend(Backbone.Model.prototype, {
     // changing 为真，表示本次 set 为递归操作，主动 set 操作尚未结束，立即返回。
     if (changing) return this;
 
+
     // 同步设置 watcher 数据
     var watchings, watching;
     var objId = this._listenId;
@@ -225,9 +220,15 @@ _.extend(Backbone.Model.prototype, {
       if (watch == null) {
         watcher.set(_.clone(attributes), _.clone(opts));
       } else {
-        var data = _.reduce(watch, function(memo, val, key) {
-          if (val == null) val = key;
-          if (_.has(changed, key)) memo[val] = changed[key];
+        var data = _.reduce(watch, function(memo, destination, original) {
+          // 此处使用 changed[original] 作为变更值传递给 watcher。
+          // 另外一种看法是可以选择使用 attributes[original] 传递给 watcher。
+          // 因为 attributes 值在 set 过程中发生变化，如果支持 attributes[original]，
+          // 即意味着必须认同 watcher 在 set 过程中也可能更改 attributes。
+          // 但如果使用 attributes[original] 可能会导致观察意图被误解，
+          // 因为changed 中发生变化的属性未必存在于  attributes 中。
+          // 所以最终使用 changed[original]。
+          if (_.has(changed, original)) memo[destination] = changed[original];
           return memo;
         }, {});
         watcher.set(data, _.clone(opts));
@@ -250,3 +251,5 @@ _.extend(Backbone.Model.prototype, {
     return this;
   }
 });
+
+export default Model;

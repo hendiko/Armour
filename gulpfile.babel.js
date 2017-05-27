@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-05-27 14:36:03
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-27 16:26:02
+ * @Last Modified time: 2017-05-27 16:54:52
  */
 import _ from 'lodash';
 import del from 'del';
@@ -15,7 +15,7 @@ import webpack from 'webpack-stream';
 var config = {
   version: '0.3.0-alpha',
   name: 'jackbone',
-  filepath: 'assets/v030/main.js',
+  filepath: 'assets/src/main.js',
   build: function() {
     return {
       output: {
@@ -80,7 +80,10 @@ gulp.task('jackbone:release', () => {
 });
 
 gulp.task('copy', () => {
-  return gulp.src(['node_modules/jquery/dist/jquery.js', 'node_modules/underscore/underscore.js'])
+  return gulp.src([
+      'node_modules/jquery/dist/jquery.js',
+      'node_modules/underscore/underscore.js'
+    ])
     .pipe(rename((path) => {
       path.dirname = '';
     }))
@@ -96,7 +99,7 @@ gulp.task('build', ['clean'], (cb) => {
 });
 
 gulp.task('release', ['build'], () => {
-  return gulp.src('build/' + config.name + '*.js', {base: 'build'})
+  return gulp.src('build/' + config.name + '*.js', { base: 'build' })
     .pipe(gulp.dest('dist'));
 });
 

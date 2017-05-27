@@ -94,7 +94,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	 * @Author: laixi
 	 * @Date:   2017-03-14 11:34:34
 	 * @Last Modified by:   laixi
-	 * @Last Modified time: 2017-05-17 13:57:15
+	 * @Last Modified time: 2017-05-27 16:29:15
 	 */
 	_core2.default.Attributes = _attributes2.default;
 	_core2.default.Controller = _controller2.default;
@@ -113,7 +113,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	// 扩展 Model 实例方法，增加 allChanged 和 anyChanged 方法。
 	_underscore2.default.extend(_model2.default.prototype, _underscore2.default.pick(_attributes2.default, 'allChanged', 'anyChanged'));
-	_core2.default.JVERSION = '0.3.4';
+	_core2.default.JACKBONE_VERSION = '0.3.4';
 	// this is invalid in es6
 	module.exports = _core2.default;
 

@@ -1,4 +1,5 @@
 {
+  "main": "dist/jackbone-0.3.0-alpha.js",
   "name": "jackbone",
   "version": "0.3.0-alpha",
   "private": true,
