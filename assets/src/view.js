@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-03-22 09:58:26
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-18 17:56:43
+ * @Last Modified time: 2017-06-06 00:04:48
  */
 import _ from 'underscore';
 import Backbone, { isRefCycle, trim, eventSplitter } from './core';
@@ -101,7 +101,7 @@ var View = Backbone.View.extend(Attributes).extend({
     _.extend(this, _.pick(options, viewOptions));
     this.props = _.isArray(this.props) ? _.clone(this.props) : [];
     this.set(_.defaults({}, options.data, _.result(this, 'defaults')), options);
-    this.changed = {}; // reset this.changed to an empty object.   
+    this.changed = {}; // reset this.changed to an empty object.
 
     this._ensureElement();
     // this.nodes 表示 node 名称与元素路径的映射关系
@@ -212,8 +212,13 @@ var View = Backbone.View.extend(Attributes).extend({
   // 委托事件过滤器
   // 每个 DOM 事件默认只应被处理一次（距离自己最近的一个 View 来处理）
   delegateEventFilter: function(e) {
-    if (e.originalEvent.originalView) return;
-    e.originalEvent.originalView = this;
+    if (e.originalEvent) {
+      if (e.originalEvent.originalView) return;
+      e.originalEvent.originalView = this;
+    } else {
+      if (e.originalView) return;
+      e.originalView = this;
+    }
     return e;
   },
 
@@ -234,7 +239,7 @@ var View = Backbone.View.extend(Attributes).extend({
   // 挂载子视图
   // options.reset 表示挂载子视图前将节点现有的视图卸载。
   // options.remove 如果为真，表示卸载视图的同时销毁视图。
-  // options.watch 
+  // options.watch
   mount: function(child, nodeName, options) {
     if (!child) return false;
     if (isRefCycle(this, child)) return false;
@@ -313,7 +318,7 @@ var View = Backbone.View.extend(Attributes).extend({
       if (options.parent) {
         this.parent.trigger(event, args, _.clone(options));
       } else {
-        this.parent.propagate(event, args, _.clone(options));        
+        this.parent.propagate(event, args, _.clone(options));
       }
     }
   },

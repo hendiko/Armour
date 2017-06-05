@@ -2,20 +2,27 @@
  * @Author: laixi
  * @Date:   2017-05-27 14:36:03
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-05-27 16:54:52
+ * @Last Modified time: 2017-06-05 23:08:59
  */
 import _ from 'lodash';
+import Backbone from './assets/src/main';
 import del from 'del';
 import gulp from 'gulp';
 import rename from 'gulp-rename';
-import sequence from 'gulp-run-sequence';
+import sequence from 'run-sequence';
 import uglifyPlugin from 'uglifyjs-webpack-plugin';
 import webpack from 'webpack-stream';
 
+// config object for webpack
 var config = {
-  version: '0.3.0-alpha',
+
+  version: Backbone.JACKBONE_VERSION,
+
   name: 'jackbone',
+
   filepath: 'assets/src/main.js',
+
+  // get webpack configuration for build
   build: function() {
     return {
       output: {
@@ -52,6 +59,7 @@ var config = {
     };
   },
 
+  // get webpack configuration for release
   release: function() {
     var options = _.extend(this.build(), {
       plugins: [
@@ -67,18 +75,21 @@ var config = {
   }
 };
 
+// build jackbone.js with webpack
 gulp.task('jackbone:build', () => {
   return gulp.src(config.filepath, { base: 'assets/src' })
     .pipe(webpack(config.build()))
     .pipe(gulp.dest('build'));
 });
 
+// build jackbone.js for release with webpack
 gulp.task('jackbone:release', () => {
   return gulp.src(config.filepath, { base: 'assets/src' })
     .pipe(webpack(config.release()))
     .pipe(gulp.dest('build'));
 });
 
+// copy dependencies to output directory
 gulp.task('copy', () => {
   return gulp.src([
       'node_modules/jquery/dist/jquery.js',
@@ -90,14 +101,17 @@ gulp.task('copy', () => {
     .pipe(gulp.dest('build'));
 });
 
+// clean output directory
 gulp.task('clean', () => {
   return del('build/*');
 });
 
+// build project for development
 gulp.task('build', ['clean'], (cb) => {
   return sequence(['jackbone:build', 'jackbone:release', 'copy'], cb);
 });
 
+// build project for release
 gulp.task('release', ['build'], () => {
   return gulp.src('build/' + config.name + '*.js', { base: 'build' })
     .pipe(gulp.dest('dist'));
