@@ -2,7 +2,7 @@
  * @Author: laixi
  * @Date:   2017-05-27 14:36:03
  * @Last Modified by:   laixi
- * @Last Modified time: 2017-06-05 23:08:59
+ * @Last Modified time: 2017-06-16 18:53:48
  */
 import _ from 'lodash';
 import Backbone from './assets/src/main';
@@ -111,10 +111,24 @@ gulp.task('build', ['clean'], (cb) => {
   return sequence(['jackbone:build', 'jackbone:release', 'copy'], cb);
 });
 
+gulp.task('post-build', ['build'], () => {
+  let basename = config.name + '-' + config.version;
+  return gulp.src('build/' + config.name + '*.js', { base: 'build' })
+    .pipe(rename((filepath) => {
+      if (filepath.basename === basename) {
+        filepath.basename = config.name;
+      } else if (filepath.basename === basename + '.min') {
+        filepath.basename = config.name + '.min';
+      }
+      return filepath;
+    }))
+    .pipe(gulp.dest('build'));
+});
+
 // build project for release
-gulp.task('release', ['build'], () => {
+gulp.task('release', ['post-build'], () => {
   return gulp.src('build/' + config.name + '*.js', { base: 'build' })
     .pipe(gulp.dest('dist'));
 });
 
-gulp.task('default', ['build']);
+gulp.task('default', ['post-build']);
